@@ -1,0 +1,22 @@
+# Normalize all tracked text files to LF in the repository.
+#
+# This tree previously mixed CRLF and LF across build config and source files,
+# which silently broke line-based tooling: a scripted patch written against
+# "\n" matched nothing in tsdown.client.ts and reported success while changing
+# no bytes. Keeping a single convention makes scripted edits (and diffs)
+# trustworthy.
+* text=auto eol=lf
+
+# Binary assets must never be line-ending converted.
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.webp binary
+*.ico binary
+*.woff binary
+*.woff2 binary
+*.zip binary
+
+# Generated build output is not authored text; keep diffs out of review noise.
+lib/ -text

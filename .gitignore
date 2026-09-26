@@ -1,0 +1,11 @@
+node_modules/
+*.tsbuildinfo
+.DS_Store
+.dsh/
+.dsh-test/
+.npm-cache/
+.pnpm-bin/
+.pnpm-store/
+*.log
+# dev-research clones of other repos; never ship these
+_research/
