@@ -1,7 +1,7 @@
 import type { Context } from '@deepseek-ai/cordis';
-export declare const name = "sanqianshuang-better-input";
+export declare const name = "sqs-dsh-better-input";
 /**
- * Host half of sanqianshuang-better-input.
+ * Host half of sqs-dsh-better-input.
  *
  * Voice input runs in the browser through the Web Speech API; the Host
  * contributes the transcript polishing service (reusing dsh's own LLM routes

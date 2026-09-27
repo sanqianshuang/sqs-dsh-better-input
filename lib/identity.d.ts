@@ -6,11 +6,13 @@
  * rename never leaves a stale literal behind.
  */
 /** Stable identifier for this fork. Used as the Typert package key. */
-export declare const PACKAGE_NAME = "sanqianshuang-better-input";
+export declare const PACKAGE_NAME = "sqs-dsh-better-input";
 /** Author of this secondary development. */
 export declare const AUTHOR = "sanqianshuang";
 /** Repository for this fork. */
-export declare const REPOSITORY_URL = "https://github.com/sanqianshuang/sanqianshuang-better-input";
+export declare const REPOSITORY_URL = "https://github.com/sanqianshuang/sqs-dsh-better-input";
+/** npm scope owner; only used to build the fallback slug when a URL is unparseable. */
+export declare const NPM_SCOPE = "sanqianshuang";
 /** License inherited from the upstream MIT project. */
 export declare const LICENSE = "MIT";
 /**

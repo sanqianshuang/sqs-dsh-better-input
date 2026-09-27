@@ -1,6 +1,6 @@
-# The sanqianshuang-better-input bundle patch. The package entry is
+# The sqs-dsh-better-input bundle patch. The package entry is
 # intentionally small; browser behavior is discovered through the package's
 # dsh.client manifest.
 - insert:
-    - id: sanqianshuang-better-input
-      name: sanqianshuang-better-input
+    - id: sqs-dsh-better-input
+      name: sqs-dsh-better-input

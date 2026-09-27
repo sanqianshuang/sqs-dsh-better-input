@@ -1,12 +1,12 @@
 {
-  "name": "sanqianshuang-better-input",
-  "version": "0.1.2",
+  "name": "sqs-dsh-better-input",
+  "version": "0.1.0",
   "description": "Better input experience for DeepSeek Harness: voice input with AI polishing, prompt optimization, and a local prompt template library",
   "license": "MIT",
   "author": "sanqianshuang",
-  "homepage": "https://github.com/sanqianshuang/sanqianshuang-better-input#readme",
+  "homepage": "https://github.com/sanqianshuang/sqs-dsh-better-input#readme",
   "bugs": {
-    "url": "https://github.com/sanqianshuang/sanqianshuang-better-input/issues"
+    "url": "https://github.com/sanqianshuang/sqs-dsh-better-input/issues"
   },
   "keywords": [
     "dsh",
@@ -21,7 +21,7 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/sanqianshuang/sanqianshuang-better-input.git"
+    "url": "git+https://github.com/sanqianshuang/sqs-dsh-better-input.git"
   },
   "type": "module",
   "main": "lib/index.js",

@@ -1,14 +1,54 @@
 # 更新日志
 
 本仓库为 [`dsh-better-input`](https://github.com/DIAG5/dsh-better-input) 的二次开发版本，
-由 **sanqianshuang** 维护，版本号自 **0.1.0** 重新起算。
+由 **sanqianshuang** 维护，包名为 **`sqs-dsh-better-input`**。
 
-## [未发布]
+> 历史沿革：本包在仓库内部曾用名 `sanqianshuang-better-input`（内部版本号 0.1.0–0.1.2），
+> **从未发布到 npm**。首次公开发布统一改名为 `sqs-dsh-better-input`，版本号自 `0.1.0` 起算，
+> 因此不再保留那些未发布的中间版本号。
+
+## [0.1.0] - 2026-09-27
+
+**首次公开发布**（npm: `sqs-dsh-better-input`，适配 DSH `0.1.7-rc.2`）。
+
+### 变更
+
+- **身份与命名统一为 `sqs-dsh-better-input`**：此前仓库内部名为
+  `sanqianshuang-better-input`，与 GitHub 仓库 `sqs-dsh-better-input` 不一致，
+  且 `package.json` 的 `repository` / `homepage` / `bugs` 指向了并不存在的
+  `sanqianshuang/sanqianshuang-better-input`。本次全部对齐到真实仓库。
+  同步改名的层级（缺一即坏）：
+
+  | 层级 | 位置 | 不改的后果 |
+  | --- | --- | --- |
+  | npm 包名 | `package.json` `name` | 发布到错误的名字 |
+  | bundle patch | `cordis.patch.yml` 的 `id` / `name` | dsh 按此挂载，找不到包 |
+  | Typert package key | `src/identity.ts` `PACKAGE_NAME` | 11 条 RPC symbol 全部错位 |
+  | 插件 entry 名 | `src/index.ts` `export const name` | 与 patch id 不一致 |
+  | **浏览器 bundle module id** | `tsdown.config.ts` → `clientBundle(id)` | **`window.__ModuleLoader__.load({id})` 仍以旧名注册，dsh 客户端模块表按新名查不到** |
+
+  最后一项最容易漏：它只在运行时生效，`tsc` 与构建都不报错，
+  连 `check-client-bundle` 也只把 id 当**信息**打印（`PASS … [旧名]`），并不判失败。
+  排查办法：看 `npm run verify` 输出里方括号中的实际 id，而不是只看 PASS。
+
+  装饰性名称（CSS keyframes、`dataset.plugin`、slot id、日志前缀、注释）一并改齐。
+
+- **数据目录跟随改名**：`~/.dsh/sanqianshuang-better-input/` →
+  `~/.dsh/sqs-dsh-better-input/`（`settings.json` 与 `templates.json`）。
+  因本包从未发布过，不存在需要迁移的既有用户，故未提供迁移逻辑。
 
 ### 修复
 
+- **`PLUGIN_REPOSITORY_SLUG` 拼出了一个不存在的包名**：
+  `src/about.ts` 原为 `` `@sanqianshuang/${PACKAGE_NAME}` ``，会得到带 scope 的
+  `@sanqianshuang/sqs-dsh-better-input`——但本包是**无 scope** 的，
+  该 scope 下并不存在这个包。此常量只在仓库 URL 解析失败时兜底，所以一直未暴露。
+  现改为由 `src/identity.ts` 的 `NPM_SCOPE` + `PACKAGE_NAME` 组成
+  **`owner/repo` 形式的仓库 slug**（`sanqianshuang/sqs-dsh-better-input`），
+  并修正 `repositorySlugFromUrl()` 正常路径下多加的 `@` 前缀。
+
 - **`TYPERT.model` 缺失，导致整个 dsh Typert 网关层失效（严重）**：
-  0.1.0–0.1.2 删除「文件输入 / OCR」功能时，把 Host 面 Typert 清单里的整个 `model`
+  早期版本删除「文件输入 / OCR」功能时，把 Host 面 Typert 清单里的整个 `model`
   块一起删掉了（当时只想删 `convertFile` 与其 `ConvertFileResult` 类型，但 `model`
   是手写元数据，被连带清空，且 `tsc` 与构建都不报错）。
 
@@ -34,23 +74,14 @@
 
   完整取证、机制与验证判据见 `INCIDENT-20260925-typert-model.md`。
 
-### 注意
-
-- **`file:` 安装是「打包拷贝」，不是软链**：profile 的
-  `node_modules/sanqianshuang-better-input` 只含 `package.json` 的 `files` 白名单，
-  没有 `src/`。因此改了源码**必须重新 `dsh plugin --profile web add <dir>`** 才生效；
-  又因 `prepack` 会跑 `npm run build`，`src/` 才是唯一真源，手改 `lib/` 会被覆盖。
-- `dsh --profile web --dump-config` 的 `err_bytes=0` **抓不到**这类激活期故障
-  （实测：出问题的实例上它依然返回 `exit=0 err_bytes=0`）。
-  判据请改用 `node scripts/verify-typert-manifest.mjs` + 启动日志里的 `did not activate`。
-
-## [0.1.2] - 2026-09-25
-
-### 修复
+- **`scripts/apply-to-wsl.sh` 的默认源目录硬编码了旧仓库名，仓库改名后必然失败**：
+  默认值原为 `/mnt/d/project/DeepseekHarness/sanqianshuang-better-input`。仓库目录改名为
+  `sqs-dsh-better-input` 后该路径不存在，脚本的 `[ -d "$SRC" ] || die …` 会直接失败。
+  改为按脚本自身位置自定位（`dirname "${BASH_SOURCE[0]}"/..`），以后再改名也不会失效。
 
 - **客户端 bundle 被无谓地塞入整份 zod（体积问题根因）**：
   `src/client/index.ts` 以**值**方式导入 `TYPERT_REMOTE`（`ctx.remote.$mount` 需要它），
-  而 `remote.ts` 又值导入了 `remote-contract.ts` 的全部 13 个 zod schema。
+  而 `remote.ts` 又值导入了 `remote-contract.ts` 的全部 zod schema。
   这条值可达链把 zod 整体打进浏览器包——**`lib/client.js` 因此从 ~100 kB 涨到 280 kB，
   gzip 从 22 kB 涨到 59 kB**。
 
@@ -75,26 +106,7 @@
   （README 只引用 `assets/banner.png`）。移出后 npm 包体积
   **1.7 MB → 315 kB**，解包 **2.1 MB → 696 kB**。
 
-### 新增
-
-- **`scripts/check-client-bundle.mjs` + `npm run verify`**：构建后守卫，防止该回归复发。
-  三条断言：客户端包内不得含 zod 代码；每个 `require()` 必须是平台 seed 词或
-  `dsh.client.inject` 声明的行；bundle 工厂须能在模拟 shell 解析器下执行并导出
-  `apply` / `inject`。已用两种负向对照（注入 `require("zod")`、内联 zod 代码）
-  验证该守卫确实会失败，而非恒真。
-
-### 变更
-
-- `tsdown.client.ts`：`alwaysBundle` 白名单去掉 `zod`，只保留相对路径（第一方模块）；
-  并在注释中记录「客户端不校验字节」这一边界事实，避免后续再被"优化"回去。
-
-## [0.1.0] - 2026-09-25
-
-首个二次开发版本，目标是**适配 DSH `0.1.7-rc.2`** 并**去除已被 DSH 原生实现的功能**。
-
-### 修复
-
-- **Typert codec 兼容性（该版本最关键的问题）**：DSH `0.1.7` 收紧了 Typert 边界校验，
+- **Typert codec 兼容性**：DSH `0.1.7` 收紧了 Typert 边界校验，
   `mode: 'strict'` 的 codec 必须提供 **`create()` 工厂**（返回带 `parse()` 的运行时 schema）。
   原版把所有 codec 写成 `{ mode:'strict', typeSymbol, schema }`，会被
   `validateCodec` 以 `strict codec has no create() factory` 拒绝，
@@ -109,13 +121,24 @@
   `SettingsForms`（`describe` / `update` / `mutate` + revision CAS）。
   该模型面向 composition 中声明的插件 Config，不适合承载插件自身的运行时开关，
   且跨版本形状仍在变动。本插件的设置因此改为**自持 JSON 文档**
-  （`~/.dsh/sanqianshuang-better-input/settings.json`，原子写入 + 损坏自愈），
+  （`~/.dsh/sqs-dsh-better-input/settings.json`，原子写入 + 损坏自愈），
   与模板库同一模式，从而不再依赖 settings API。
 
 - **依赖版本对齐**：`@deepseek-ai/cordis` → `~4.0.4`、
   `@deepseek-ai/schemastery` → `~3.18.4`（与 `0.1.7-rc.2` 各包的 peer 要求一致）；
   全部 `@deepseek-ai/dsh-*` 类型包 dev 依赖升至 `0.1.7-rc.2`，peer 范围收紧为
   `>=0.1.7-rc.2 <0.2.0-0`。
+
+### 新增
+
+- **`scripts/check-client-bundle.mjs` + `npm run verify`**：构建后守卫，防止该回归复发。
+  三条断言：客户端包内不得含 zod 代码；每个 `require()` 必须是平台 seed 词或
+  `dsh.client.inject` 声明的行；bundle 工厂须能在模拟 shell 解析器下执行并导出
+  `apply` / `inject`。已用两种负向对照（注入 `require("zod")`、内联 zod 代码）
+  验证该守卫确实会失败，而非恒真。
+
+- **`scripts/verify-typert-manifest.mjs`**：以 dsh 自身的 `validateTypertManifest`
+  为权威判据校验构建产物，`tsc` 抓不到的 manifest 缺块问题由此可守。
 
 ### 移除
 
@@ -136,18 +159,15 @@
     `papaparse`、`pdfjs-dist`、`turndown`、`xlsx`
     （浏览器 bundle 由约 600 kB 降至约 280 kB）
 
-### 变更
+### 注意
 
-- **身份与命名**：包名 `dsh-better-input` → `sanqianshuang-better-input`，
-  作者 `DIAG5` → `sanqianshuang`，仓库与 homepage/bugs 指向本项目；
-  版本号自 `0.1.0` 重新起算（不再沿用原版 `0.2.x`）。
-  Typert package key、settings namespace、插件 `name`、cordis patch entry id、
-  客户端 slot id 与 CSS 动画名同步改名。
-- **数据目录隔离**：设置与模板改存 `~/.dsh/sanqianshuang-better-input/`，
-  与原版 `~/.dsh/better-input/` 互不干扰，两者可并存安装。
-- **LICENSE**：保留原项目版权声明并新增本项目版权（MIT 要求）。
-- 新增 `src/identity.ts` 作为包名 / 作者 / 仓库的唯一来源，避免改名遗漏字面量。
-- 文档重写为中文本 README + 本 CHANGELOG（原英文镜像与旧 CHANGELOG 已删除）。
+- **`file:` 安装是「打包拷贝」，不是软链**：profile 的
+  `node_modules/sqs-dsh-better-input` 只含 `package.json` 的 `files` 白名单，
+  没有 `src/`。因此改了源码**必须重新 `dsh plugin --profile web add <dir>`** 才生效；
+  又因 `prepack` 会跑 `npm run build`，`src/` 才是唯一真源，手改 `lib/` 会被覆盖。
+- `dsh --profile web --dump-config` 的 `err_bytes=0` **抓不到**激活期故障
+  （实测：出问题的实例上它依然返回 `exit=0 err_bytes=0`）。
+  判据请改用 `npm run verify`（含 `check:typert`）+ 启动日志里的 `did not activate`。
 
 ### 保留
 

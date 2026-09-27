@@ -1,7 +1,7 @@
 /**
  * Host-side JSON file storage for prompt templates.
  *
- * Location: `~/.dsh/sanqianshuang-better-input/templates.json`. The plugin ships as a flat
+ * Location: `~/.dsh/sqs-dsh-better-input/templates.json`. The plugin ships as a flat
  * bundle under node_modules, so anything stored next to the package would be
  * wiped on update — the only durable, dependency-free location is the user's
  * home directory (Node builtins only).

@@ -75,7 +75,7 @@ function codec(typeSymbol: string) {
     create: () => ({
       parse(value: unknown): unknown {
         throw new Error(
-          `sanqianshuang-better-input: client-face codec ${typeSymbol} was materialized. ` +
+          `sqs-dsh-better-input: client-face codec ${typeSymbol} was materialized. ` +
           'The client must never validate wire bytes (the Host does). ' +
           'If this fires, the client-face descriptor is being used for validation it should not own.'
         )

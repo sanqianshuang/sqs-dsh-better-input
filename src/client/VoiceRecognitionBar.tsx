@@ -83,7 +83,7 @@ function PulsingDot() {
         height: 8,
         borderRadius: '50%',
         background: 'var(--dsw-alias-state-error-secondary, #e5484d)',
-        animation: 'sanqianshuang-better-input-pulse 1.2s ease-in-out infinite'
+        animation: 'sqs-dsh-better-input-pulse 1.2s ease-in-out infinite'
       }}
     />
   )

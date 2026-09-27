@@ -1,9 +1,9 @@
 /**
- * Shared constants and browser-side helpers for sanqianshuang-better-input.
+ * Shared constants and browser-side helpers for sqs-dsh-better-input.
  * Voice input through the browser Web Speech API, plus Host-side
  * AI polishing of transcripts and prompt optimization.
  */
-export declare const SETTINGS_NAMESPACE = "sanqianshuang-better-input";
+export declare const SETTINGS_NAMESPACE = "sqs-dsh-better-input";
 /** Recording is capped to avoid an abandoned session holding the mic forever. */
 export declare const DEFAULT_MAX_RECORDING_SECONDS = 120;
 export declare const MAX_POLISH_PROMPT_LENGTH = 4000;

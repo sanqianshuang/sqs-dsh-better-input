@@ -9,7 +9,7 @@
  * only at dsh boot, as
  *
  *     dsh: warning: 1 entry did not activate
- *     typert-loader: sanqianshuang-better-input TYPERT.model must be an object
+ *     typert-loader: sqs-dsh-better-input TYPERT.model must be an object
  *
  * and the browser web boot then refuses to render the UI at all.
  *
@@ -191,7 +191,7 @@ try {
   process.exit(1)
 }
 
-const pkgName = typeof manifest?.package === 'string' ? manifest.package : 'sanqianshuang-better-input'
+const pkgName = typeof manifest?.package === 'string' ? manifest.package : 'sqs-dsh-better-input'
 const failures = []
 for (const [label, validate] of [
   ['mirror', validateTypertManifest],

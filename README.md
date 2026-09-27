@@ -1,10 +1,16 @@
 <p align="center">
-  <img src="./assets/banner.png" width="100%" alt="sanqianshuang-better-input banner" />
+  <img src="./assets/banner.png" width="100%" alt="sqs-dsh-better-input banner" />
 </p>
 
-<h1 align="center">🎤 sanqianshuang-better-input</h1>
+<h1 align="center">🎤 sqs-dsh-better-input</h1>
 
 <p align="center"><b>给 DeepSeek Harness 更好的「输入」体验。</b></p>
+
+<p align="center">
+  <a href="https://www.npmjs.com/package/sqs-dsh-better-input"><img src="https://img.shields.io/npm/v/sqs-dsh-better-input.svg" alt="npm version" /></a>
+  <a href="https://www.npmjs.com/package/sqs-dsh-better-input"><img src="https://img.shields.io/npm/dm/sqs-dsh-better-input.svg" alt="npm downloads" /></a>
+  <a href="./LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="license MIT" /></a>
+</p>
 
 <p align="center">
   输入体验增强插件 · 基于 dsh-better-input 的二次开发
@@ -24,7 +30,7 @@
 | 🔧 **修复 Typert 兼容性（关键）** | `0.1.7` 收紧了 Typert 边界：`mode: 'strict'` 的 codec 必须带 **`create()` 工厂**；旧版把 schema 直接放在 `schema` 属性上，会被 `requireStrictCodec` 拒绝（报 `strict codec has no create() factory`），导致整个 entry 无法激活、插件根本不加载。现已全部改为工厂形式。 |
 | 🔧 **修复设置存储被移除的 API** | `0.1.7` 删除了 `settings.register(namespace, schema)`，改为按 profile entry 的 `SettingsForms`（带 revision CAS）。本插件的设置改为**自持 JSON 文件**，不再依赖该 API，因而不会被后续版本反复打破。 |
 | 🔧 **对齐依赖版本** | `@deepseek-ai/cordis` → `~4.0.4`、`@deepseek-ai/schemastery` → `~3.18.4`，与 `0.1.7-rc.2` 的 peer 要求一致。 |
-| 🏷️ **身份与命名** | 包名 `sanqianshuang-better-input`、作者 `sanqianshuang`、版本从 `0.1.0` 重新起算；设置与模板数据目录为 `~/.dsh/sanqianshuang-better-input/`（与原版互不干扰）。 |
+| 🏷️ **身份与命名** | 包名 `sqs-dsh-better-input`（npm 同名）、作者 `sanqianshuang`；设置与模板数据目录为 `~/.dsh/sqs-dsh-better-input/`（与原版互不干扰，可并存安装）。 |
 
 > 原版的 LICENSE 与版权声明已在 [LICENSE](./LICENSE) 中保留，符合 MIT 要求。
 
@@ -70,27 +76,40 @@
 
 前置：[DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness)（`0.1.7-rc.2`）+ Node.js `^22.19.0 || >=24.0.0` + Chrome/Edge 浏览器（语音识别需要 Chromium 内核）。
 
-### 方式 A：有全局 `dsh` CLI
+### 方式 A：从 npm 安装（推荐）
 
 ```sh
-# 从本地目录安装（开发 / 二次开发场景）
-dsh plugin --profile web add /path/to/sanqianshuang-better-input
+# 有全局 dsh CLI
+dsh plugin --profile web add sqs-dsh-better-input
 
-# 卸载
-dsh plugin --profile web remove sanqianshuang-better-input
+# 没有全局 dsh（用 npx 拉取）
+npx -y @deepseek-ai/dsh plugin --profile web add sqs-dsh-better-input
 ```
 
-### 方式 B：没有 `dsh`，或不想全局安装（npx 全称）
+升级到最新版：
 
 ```sh
-npx -y @deepseek-ai/dsh plugin --profile web add /path/to/sanqianshuang-better-input
+dsh plugin --profile web update sqs-dsh-better-input
 ```
 
-### 从源码构建
+卸载：
 
 ```sh
-git clone <your-repo-url> sanqianshuang-better-input
-cd sanqianshuang-better-input
+dsh plugin --profile web remove sqs-dsh-better-input
+```
+
+### 方式 B：从本地目录安装（开发 / 二次开发）
+
+```sh
+dsh plugin --profile web add /path/to/sqs-dsh-better-input
+npx -y @deepseek-ai/dsh plugin --profile web add /path/to/sqs-dsh-better-input
+```
+
+### 方式 C：从源码构建
+
+```sh
+git clone https://github.com/sanqianshuang/sqs-dsh-better-input.git
+cd sqs-dsh-better-input
 npm install --legacy-peer-deps   # 见下方说明
 npm run build
 dsh plugin --profile web add "$PWD"
@@ -102,8 +121,8 @@ dsh plugin --profile web add "$PWD"
 
 ```yaml
 - insert:
-    - id: sanqianshuang-better-input
-      name: sanqianshuang-better-input
+    - id: sqs-dsh-better-input
+      name: sqs-dsh-better-input
 ```
 
 安装后刷新 Web UI，输入框右侧会出现**麦克风图标** 🎤。
@@ -141,7 +160,7 @@ dsh plugin --profile web add "$PWD"
 3. 回到输入框键入 `/`，模板候选即弹出；继续输入按名称 / 描述 / 标签实时过滤
 4. 选中候选，模板正文直接插入输入框，可继续修改后发送
 
-> 模板保存在宿主本地 `~/.dsh/sanqianshuang-better-input/templates.json`，不经服务器、不上传；最多 200 个模板，正文上限 8000 字，列表按最近更新排序。写入走「临时文件 + 原子重命名」，文件意外损坏时自动隔离为 `*.corrupt-<时间戳>` 并重建。
+> 模板保存在宿主本地 `~/.dsh/sqs-dsh-better-input/templates.json`，不经服务器、不上传；最多 200 个模板，正文上限 8000 字，列表按最近更新排序。写入走「临时文件 + 原子重命名」，文件意外损坏时自动隔离为 `*.corrupt-<时间戳>` 并重建。
 
 ### 5. 设置
 
@@ -157,7 +176,7 @@ dsh plugin --profile web add "$PWD"
 | 提示词模板 | 设置页内新建 / 编辑 / 删除，数据保存在宿主本地 JSON |
 | 关于与更新 | 显示当前版本 / 许可证 / 仓库，一键「检查更新」 |
 
-> 以上设置保存在 `~/.dsh/sanqianshuang-better-input/settings.json`。
+> 以上设置保存在 `~/.dsh/sqs-dsh-better-input/settings.json`。
 
 ## 🧩 兼容性
 

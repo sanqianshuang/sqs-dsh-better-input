@@ -1,10 +1,10 @@
 /**
- * Shared constants and browser-side helpers for sanqianshuang-better-input.
+ * Shared constants and browser-side helpers for sqs-dsh-better-input.
  * Voice input through the browser Web Speech API, plus Host-side
  * AI polishing of transcripts and prompt optimization.
  */
 
-export const SETTINGS_NAMESPACE = 'sanqianshuang-better-input'
+export const SETTINGS_NAMESPACE = 'sqs-dsh-better-input'
 
 /** Recording is capped to avoid an abandoned session holding the mic forever. */
 export const DEFAULT_MAX_RECORDING_SECONDS = 120
@@ -136,16 +136,16 @@ export function isValidContextTurns(value: number): boolean {
 
 export function validateSettings(settings: BetterInputSettings): void {
   if (!isValidRecordingLimit(settings.maxRecordingSeconds)) {
-    throw new Error('sanqianshuang-better-input recording limit must be between 1 and 600 seconds')
+    throw new Error('sqs-dsh-better-input recording limit must be between 1 and 600 seconds')
   }
   if (!isValidContextTurns(settings.contextTurns)) {
-    throw new Error('sanqianshuang-better-input context turns must be between 0 and 20')
+    throw new Error('sqs-dsh-better-input context turns must be between 0 and 20')
   }
   if (settings.polishPrompt.trim().length > MAX_POLISH_PROMPT_LENGTH) {
-    throw new Error('sanqianshuang-better-input polish prompt is too long')
+    throw new Error('sqs-dsh-better-input polish prompt is too long')
   }
   if (settings.optimizePrompt.trim().length > MAX_OPTIMIZE_PROMPT_LENGTH) {
-    throw new Error('sanqianshuang-better-input optimize prompt is too long')
+    throw new Error('sqs-dsh-better-input optimize prompt is too long')
   }
 }
 

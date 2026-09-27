@@ -20,7 +20,7 @@ import { TemplatesController } from './templates-controller.js'
 import { TemplatesSection } from './templates-section.jsx'
 import { VoiceInputSession } from './voice-session.js'
 
-const PULSE_KEYFRAMES = `@keyframes sanqianshuang-better-input-pulse {
+const PULSE_KEYFRAMES = `@keyframes sqs-dsh-better-input-pulse {
   0%, 100% { opacity: 1; }
   50% { opacity: 0.3; }
 }`
@@ -68,18 +68,18 @@ export async function apply(ctx: ClientContext): Promise<() => Promise<void>> {
       disposeTemplatesSource()
       controller.dispose()
       templatesController.dispose()
-    }, 'sanqianshuang-better-input sessions lifecycle')
+    }, 'sqs-dsh-better-input sessions lifecycle')
 
     // Inject the keyframes used by the recognition bar pulse.
     remoteCtx.effect(() => {
       const styleTag = document.createElement('style')
-      styleTag.dataset.plugin = 'sanqianshuang-better-input'
+      styleTag.dataset.plugin = 'sqs-dsh-better-input'
       styleTag.textContent = PULSE_KEYFRAMES
       document.head.appendChild(styleTag)
       return () => {
         styleTag.remove()
       }
-    }, 'sanqianshuang-better-input styles')
+    }, 'sqs-dsh-better-input styles')
 
     void controller.refreshSettings()
     void controller.refreshRoutes()
@@ -151,7 +151,7 @@ export async function apply(ctx: ClientContext): Promise<() => Promise<void>> {
       remoteCtx.slots.register(
         {
           name: 'settings.section',
-          id: 'sanqianshuang-better-input',
+          id: 'sqs-dsh-better-input',
           order: 16,
           // Thunk so the sidebar row follows the active locale on switches.
           label: () => ctx.locale.bind(BETTER_INPUT_NS)('settingsTitle'),
@@ -168,7 +168,7 @@ export async function apply(ctx: ClientContext): Promise<() => Promise<void>> {
       remoteCtx.slots.register(
         {
           name: 'settings.section',
-          id: 'sanqianshuang-better-input-templates',
+          id: 'sqs-dsh-better-input-templates',
           order: 17,
           label: () => ctx.locale.bind(BETTER_INPUT_NS)('templatesTitle'),
           locale: BETTER_INPUT_NS,

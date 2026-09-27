@@ -15,7 +15,7 @@ export const VOICE_ERROR_DISMISS_MS = 2600
 
 /**
  * Shared voice-input state for one session, written from scratch for
- * sanqianshuang-better-input. The microphone button and the recognition bar both
+ * sqs-dsh-better-input. The microphone button and the recognition bar both
  * subscribe; the bar can request stop/cancel through the same instance.
  */
 export class VoiceInputSession {

@@ -4,7 +4,7 @@ Guidance for AI agents working in this repository.
 
 ## What this project is
 
-`sanqianshuang-better-input` is a **DeepSeek Harness (dsh) plugin** providing a better
+`sqs-dsh-better-input` is a **DeepSeek Harness (dsh) plugin** providing a better
 input experience: voice input, AI polishing, prompt optimization, and a local prompt
 template library.
 
@@ -113,7 +113,7 @@ npx -y @deepseek-ai/dsh plugin --profile web add "$PWD"
 ```
 
 **`file:` installs are a pack-and-copy, not a symlink.** The profile's
-`node_modules/sanqianshuang-better-input` contains only the `package.json` `files`
+`node_modules/sqs-dsh-better-input` contains only the `package.json` `files`
 whitelist — there is **no `src/`**. So after changing source you must re-run
 `dsh plugin --profile web add <dir>` for it to take effect.
 
@@ -138,7 +138,7 @@ Two halves, one package:
 src/                     Host (Node) half
   identity.ts            single source of truth for names/URLs — never hardcode
   config.ts              settings shape, defaults, validation
-  settings/store.ts      self-owned JSON doc at ~/.dsh/sanqianshuang-better-input/settings.json
+  settings/store.ts      self-owned JSON doc at ~/.dsh/sqs-dsh-better-input/settings.json
   templates/store.ts     template JSON doc in the same directory
   polish/service.ts      the BetterInputPolish service (llm-backed)
   polish/prompts.ts      default system prompts
@@ -168,7 +168,7 @@ src/client/              Browser half (bundled to lib/client.js)
   `settings.register(namespace, schema)`, and `SettingsForms` addresses profile entry ids
   rather than plugin runtime toggles.
 - New externally visible names go in `src/identity.ts`, not as literals.
-- Data directory is `~/.dsh/sanqianshuang-better-input/` so it can coexist with the
+- Data directory is `~/.dsh/sqs-dsh-better-input/` so it can coexist with the
   upstream plugin installed side by side.
 
 ---

@@ -5,15 +5,15 @@
 #
 # 背景（事故 INCIDENT-20260925-typert-model.md）：
 #   WSL profile 的 package.json 里依赖是 `file:/mnt/d/project/DeepseekHarness/
-#   sanqianshuang-better-input`，pnpm 把它**复制**成实目录
-#   /root/.dsh/profiles/web/node_modules/sanqianshuang-better-input。
+#   sqs-dsh-better-input`，pnpm 把它**复制**成实目录
+#   /root/.dsh/profiles/web/node_modules/sqs-dsh-better-input。
 #   该副本是快照：工作区里重新 build 出的 lib/ 不会自动进去。
 #   旧快照的 lib/typert.js 缺 TYPERT.model → typert-loader 拒收 manifest
 #   → 内置 typert-loader 自己激活失败 → 整个 Typert 网关无定义
 #   → 设置/模型/权限页全部“加载失败”。
 #
 # 用法（在 WSL 内以 root 跑，或在 Windows 上用 wsl 调用）：
-#   bash /mnt/d/project/DeepseekHarness/sanqianshuang-better-input/scripts/apply-to-wsl.sh
+#   bash /mnt/d/project/DeepseekHarness/sqs-dsh-better-input/scripts/apply-to-wsl.sh
 #     [--no-restart]   只同步文件，不重启服务
 #     [--dry-run]      只打印计划
 #
@@ -21,9 +21,12 @@
 # =============================================================================
 set -u
 
-SRC="${SRC:-/mnt/d/project/DeepseekHarness/sanqianshuang-better-input}"
+# 默认源目录 = 本脚本所在仓库的根（自定位）。
+# 旧写法硬编码 `.../sanqianshuang-better-input`；目录改名成
+# `sqs-dsh-better-input` 后该默认值指向不存在的路径，脚本第 44 行直接 die。
+SRC="${SRC:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
 PROFILE_ROOT="${PROFILE_ROOT:-/root/.dsh/profiles/web}"
-DEST="$PROFILE_ROOT/node_modules/sanqianshuang-better-input"
+DEST="$PROFILE_ROOT/node_modules/sqs-dsh-better-input"
 OPS="${DSH_OPS:-/usr/local/bin/dsh-ops.sh}"
 WEB_LOG="${WEB_LOG:-/var/log/dsh-web.log}"
 

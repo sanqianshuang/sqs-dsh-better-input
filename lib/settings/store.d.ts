@@ -1,7 +1,7 @@
 /**
  * Host-side JSON file storage for the plugin's own settings.
  *
- * Location: `~/.dsh/sanqianshuang-better-input/settings.json`.
+ * Location: `~/.dsh/sqs-dsh-better-input/settings.json`.
  *
  * dsh 0.1.7 replaced the old per-plugin `settings.register(namespace, schema)`
  * API with a Loader-entry configuration model (`SettingsForms`, addressed by

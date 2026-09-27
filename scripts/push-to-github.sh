@@ -17,7 +17,7 @@
 set -euo pipefail
 
 OWNER="sanqianshuang"
-REPO="sanqianshuang-better-input"
+REPO="sqs-dsh-better-input"
 DESC="Better input experience for DeepSeek Harness: voice input with AI polishing, prompt optimization, and a local prompt template library"
 
 if [ -n "${GH_TOKEN:-}" ]; then

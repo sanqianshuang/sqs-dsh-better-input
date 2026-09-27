@@ -1,10 +1,10 @@
 import type { Context } from '@deepseek-ai/cordis'
 import { BetterInputPolishService } from './polish/service.js'
 
-export const name = 'sanqianshuang-better-input'
+export const name = 'sqs-dsh-better-input'
 
 /**
- * Host half of sanqianshuang-better-input.
+ * Host half of sqs-dsh-better-input.
  *
  * Voice input runs in the browser through the Web Speech API; the Host
  * contributes the transcript polishing service (reusing dsh's own LLM routes
@@ -16,5 +16,5 @@ export async function apply(ctx: Context): Promise<void> {
 
   ctx.effect(() => {
     return () => undefined
-  }, 'sanqianshuang-better-input lifecycle')
+  }, 'sqs-dsh-better-input lifecycle')
 }

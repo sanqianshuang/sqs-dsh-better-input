@@ -54,18 +54,18 @@ export function normalizeTags(tags: readonly string[]): string[] {
 export function validateTemplateInput(input: TemplateInput): void {
   const name = input.name.trim()
   if (name === '') {
-    throw new Error('sanqianshuang-better-input template name must not be empty')
+    throw new Error('sqs-dsh-better-input template name must not be empty')
   }
   if (name.length > MAX_TEMPLATE_NAME_LENGTH) {
-    throw new Error(`sanqianshuang-better-input template name must not exceed ${MAX_TEMPLATE_NAME_LENGTH} characters`)
+    throw new Error(`sqs-dsh-better-input template name must not exceed ${MAX_TEMPLATE_NAME_LENGTH} characters`)
   }
   if (input.content.trim() === '') {
-    throw new Error('sanqianshuang-better-input template content must not be empty')
+    throw new Error('sqs-dsh-better-input template content must not be empty')
   }
   if (input.content.length > MAX_TEMPLATE_CONTENT_LENGTH) {
-    throw new Error(`sanqianshuang-better-input template content must not exceed ${MAX_TEMPLATE_CONTENT_LENGTH} characters`)
+    throw new Error(`sqs-dsh-better-input template content must not exceed ${MAX_TEMPLATE_CONTENT_LENGTH} characters`)
   }
   if (input.description !== undefined && input.description.length > MAX_TEMPLATE_DESCRIPTION_LENGTH) {
-    throw new Error(`sanqianshuang-better-input template description must not exceed ${MAX_TEMPLATE_DESCRIPTION_LENGTH} characters`)
+    throw new Error(`sqs-dsh-better-input template description must not exceed ${MAX_TEMPLATE_DESCRIPTION_LENGTH} characters`)
   }
 }

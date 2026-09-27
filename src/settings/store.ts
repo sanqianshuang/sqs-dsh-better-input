@@ -1,7 +1,7 @@
 /**
  * Host-side JSON file storage for the plugin's own settings.
  *
- * Location: `~/.dsh/sanqianshuang-better-input/settings.json`.
+ * Location: `~/.dsh/sqs-dsh-better-input/settings.json`.
  *
  * dsh 0.1.7 replaced the old per-plugin `settings.register(namespace, schema)`
  * API with a Loader-entry configuration model (`SettingsForms`, addressed by
@@ -21,7 +21,7 @@ import { dirname, join } from 'node:path'
 import { DEFAULT_SETTINGS, validateSettings, type BetterInputSettings } from '../config.js'
 
 export function defaultSettingsFilePath(): string {
-  return join(homedir(), '.dsh', 'sanqianshuang-better-input', 'settings.json')
+  return join(homedir(), '.dsh', 'sqs-dsh-better-input', 'settings.json')
 }
 
 function isNodeError(error: unknown): error is NodeJS.ErrnoException {
@@ -111,7 +111,7 @@ export class SettingsStore {
   private async quarantineCorruptFile(): Promise<void> {
     try {
       await rename(this.filePath, `${this.filePath}.corrupt-${Date.now()}`)
-      console.warn('[sanqianshuang-better-input] settings file was corrupt; moved aside and started fresh')
+      console.warn('[sqs-dsh-better-input] settings file was corrupt; moved aside and started fresh')
     } catch {
       // Best effort: the next atomic write recreates the file anyway.
     }

@@ -9,14 +9,20 @@
 dsh ecosystem.
  */
 export declare const PLUGIN_LICENSE = "MIT";
-export declare const PLUGIN_REPOSITORY_URL = "https://github.com/sanqianshuang/sanqianshuang-better-input";
-export declare const PLUGIN_REPOSITORY_SLUG = "@sanqianshuang/sanqianshuang-better-input";
-export declare const PLUGIN_PACKAGE_NAME = "sanqianshuang-better-input";
+export declare const PLUGIN_REPOSITORY_URL = "https://github.com/sanqianshuang/sqs-dsh-better-input";
+/**
+ * Fallback repository slug (owner/repo), used only when a repository URL cannot
+ * be parsed. It must be the *repository* slug, not an npm package name: the
+ * package is unscoped, so prefixing it with the npm scope would invent a
+ * package that does not exist.
+ */
+export declare const PLUGIN_REPOSITORY_SLUG = "sanqianshuang/sqs-dsh-better-input";
+export declare const PLUGIN_PACKAGE_NAME = "sqs-dsh-better-input";
 /** Global-CLI form (works when `dsh` is installed globally). */
-export declare const UPDATE_COMMAND = "dsh plugin --profile web update sanqianshuang-better-input";
+export declare const UPDATE_COMMAND = "dsh plugin --profile web update sqs-dsh-better-input";
 /** npx form (works without a global `dsh` CLI; DSH is pulled on demand). */
-export declare const UPDATE_COMMAND_NPX = "npx -y @deepseek-ai/dsh plugin --profile web update sanqianshuang-better-input";
-export declare const NPM_LATEST_URL = "https://registry.npmjs.org/sanqianshuang-better-input/latest";
+export declare const UPDATE_COMMAND_NPX = "npx -y @deepseek-ai/dsh plugin --profile web update sqs-dsh-better-input";
+export declare const NPM_LATEST_URL = "https://registry.npmjs.org/sqs-dsh-better-input/latest";
 export type AboutInfo = {
     readonly repository: string;
     readonly repositorySlug: string;

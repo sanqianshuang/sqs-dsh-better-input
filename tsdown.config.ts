@@ -3,7 +3,7 @@ import { clientBundle } from './tsdown.client.ts'
 
 export default defineConfig([
   {
-    name: 'sanqianshuang-better-input',
+    name: 'sqs-dsh-better-input',
     entry: {
       index: 'src/index.ts',
       typert: 'src/typert.ts',
@@ -21,5 +21,5 @@ export default defineConfig([
       dts: '.d.ts'
     })
   },
-  clientBundle('sanqianshuang-better-input', 'src/client.ts')
+  clientBundle('sqs-dsh-better-input', 'src/client.ts')
 ])

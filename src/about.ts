@@ -12,11 +12,17 @@ dsh ecosystem.
 import { readFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { LICENSE, PACKAGE_NAME, REPOSITORY_URL } from './identity.js'
+import { LICENSE, NPM_SCOPE, PACKAGE_NAME, REPOSITORY_URL } from './identity.js'
 
 export const PLUGIN_LICENSE = LICENSE
 export const PLUGIN_REPOSITORY_URL = REPOSITORY_URL
-export const PLUGIN_REPOSITORY_SLUG = `@sanqianshuang/${PACKAGE_NAME}`
+/**
+ * Fallback repository slug (owner/repo), used only when a repository URL cannot
+ * be parsed. It must be the *repository* slug, not an npm package name: the
+ * package is unscoped, so prefixing it with the npm scope would invent a
+ * package that does not exist.
+ */
+export const PLUGIN_REPOSITORY_SLUG = `${NPM_SCOPE}/${PACKAGE_NAME}`
 export const PLUGIN_PACKAGE_NAME = PACKAGE_NAME
 /** Global-CLI form (works when `dsh` is installed globally). */
 export const UPDATE_COMMAND = `dsh plugin --profile web update ${PLUGIN_PACKAGE_NAME}`
@@ -77,7 +83,7 @@ export function repositoryUrlFromPackage(value: unknown): string {
 
 export function repositorySlugFromUrl(url: string): string {
   const match = /github\.com\/([^/]+\/[^/]+)/i.exec(url)
-  return match === null ? PLUGIN_REPOSITORY_SLUG : `@${(match[1] ?? '').replace(/\.git$/, '')}`
+  return match === null ? PLUGIN_REPOSITORY_SLUG : (match[1] ?? '').replace(/\.git$/, '')
 }
 
 export function resolvePackageJsonPath(): string {

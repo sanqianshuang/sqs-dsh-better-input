@@ -1,5 +1,5 @@
 /**
- * Bilingual UI strings for sanqianshuang-better-input (zh/en). Registered as one
+ * Bilingual UI strings for sqs-dsh-better-input (zh/en). Registered as one
  * namespace into the DSH locale runtime; every slot component declares that
  * namespace and reads copy through the framework-injected `t` seat, so the
  * UI follows the DSH settings language switch automatically.

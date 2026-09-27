@@ -8,7 +8,7 @@ const require = createRequire('/root/.dsh/profiles/web/package.json');
 const puppeteer = require('puppeteer-core');
 
 const CHROME = '/opt/google/chrome/chrome';
-const OUTDIR = '/mnt/d/project/DeepseekHarness/sanqianshuang-better-input/evidence';
+const OUTDIR = '/mnt/d/project/DeepseekHarness/sqs-dsh-better-input/evidence';
 const outName = process.argv[2] || 'wsl-settings';
 const navLabel = process.argv[3] || '';
 

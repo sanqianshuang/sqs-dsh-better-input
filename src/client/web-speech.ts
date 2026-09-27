@@ -1,6 +1,6 @@
 /**
  * Browser Web Speech recognition session, written from scratch for
- * sanqianshuang-better-input. Wraps SpeechRecognition / webkitSpeechRecognition with a
+ * sqs-dsh-better-input. Wraps SpeechRecognition / webkitSpeechRecognition with a
  * small structural interface so no DOM lib augmentation is required.
  */
 

@@ -1,7 +1,7 @@
 /**
  * Host-side JSON file storage for prompt templates.
  *
- * Location: `~/.dsh/sanqianshuang-better-input/templates.json`. The plugin ships as a flat
+ * Location: `~/.dsh/sqs-dsh-better-input/templates.json`. The plugin ships as a flat
  * bundle under node_modules, so anything stored next to the package would be
  * wiped on update — the only durable, dependency-free location is the user's
  * home directory (Node builtins only).
@@ -24,7 +24,7 @@ import {
 } from './model.js'
 
 export function defaultTemplatesFilePath(): string {
-  return join(homedir(), '.dsh', 'sanqianshuang-better-input', 'templates.json')
+  return join(homedir(), '.dsh', 'sqs-dsh-better-input', 'templates.json')
 }
 
 function isNodeError(error: unknown): error is NodeJS.ErrnoException {
@@ -78,7 +78,7 @@ export class TemplateStore {
       updatedAt: now
     }
     if (existing === undefined && templates.length >= MAX_TEMPLATE_COUNT) {
-      throw new Error(`sanqianshuang-better-input template count limit (${MAX_TEMPLATE_COUNT}) reached`)
+      throw new Error(`sqs-dsh-better-input template count limit (${MAX_TEMPLATE_COUNT}) reached`)
     }
     const next =
       existing === undefined
@@ -128,7 +128,7 @@ export class TemplateStore {
   private async quarantineCorruptFile(): Promise<void> {
     try {
       await rename(this.filePath, `${this.filePath}.corrupt-${Date.now()}`)
-      console.warn('[sanqianshuang-better-input] templates file was corrupt; moved aside and started fresh')
+      console.warn('[sqs-dsh-better-input] templates file was corrupt; moved aside and started fresh')
     } catch {
       // Best effort: the next atomic write recreates the file anyway.
     }

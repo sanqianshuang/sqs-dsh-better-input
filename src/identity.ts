@@ -7,13 +7,16 @@
  */
 
 /** Stable identifier for this fork. Used as the Typert package key. */
-export const PACKAGE_NAME = 'sanqianshuang-better-input'
+export const PACKAGE_NAME = 'sqs-dsh-better-input'
 
 /** Author of this secondary development. */
 export const AUTHOR = 'sanqianshuang'
 
 /** Repository for this fork. */
-export const REPOSITORY_URL = 'https://github.com/sanqianshuang/sanqianshuang-better-input'
+export const REPOSITORY_URL = 'https://github.com/sanqianshuang/sqs-dsh-better-input'
+
+/** npm scope owner; only used to build the fallback slug when a URL is unparseable. */
+export const NPM_SCOPE = 'sanqianshuang'
 
 /** License inherited from the upstream MIT project. */
 export const LICENSE = 'MIT'
