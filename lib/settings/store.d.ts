@@ -12,7 +12,7 @@
  * This plugin therefore owns its settings in a plain JSON document, exactly like
  * the template library. That keeps it independent of the settings API churn,
  * keeps writes atomic, and keeps the settings page a normal `settings.section`
- * slot (which is unchanged in 0.1.7).
+ * slot (unchanged in 0.2.0-rc.2, the current target).
  */
 import { type BetterInputSettings } from '../config.js';
 export declare function defaultSettingsFilePath(): string;
@@ -20,6 +20,13 @@ export declare function defaultSettingsFilePath(): string;
  * Coerce an untrusted stored document into a complete settings object. Every
  * field falls back to its default, so a partially written or hand-edited file
  * still yields a usable value instead of throwing.
+ *
+ * Out-of-range numbers are repaired here, not merely defaulted: `merge()`
+ * validates the whole merged document before writing, so a value left over
+ * from an older schema (the recording limit used to allow 600 seconds; the
+ * ceiling is now dsh's own 120) would otherwise make *every* later save fail.
+ * `language` is narrowed onto a hint the local recognizer accepts for the same
+ * reason — `speechToText.resolve()` rejects an unadvertised language.
  */
 export declare function normalizeSettings(raw: unknown): BetterInputSettings;
 export declare class SettingsStore {

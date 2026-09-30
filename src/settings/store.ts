@@ -12,13 +12,13 @@
  * This plugin therefore owns its settings in a plain JSON document, exactly like
  * the template library. That keeps it independent of the settings API churn,
  * keeps writes atomic, and keeps the settings page a normal `settings.section`
- * slot (which is unchanged in 0.1.7).
+ * slot (unchanged in 0.2.0-rc.2, the current target).
  */
 
 import { mkdir, readFile, rename, writeFile } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { dirname, join } from 'node:path'
-import { DEFAULT_SETTINGS, validateSettings, type BetterInputSettings } from '../config.js'
+import { DEFAULT_SETTINGS, isValidAutoStopSeconds, isValidContextTurns, isValidRecordingLimit, isValidSegmentSeconds, normalizeSpeechLanguage, validateSettings, type BetterInputSettings } from '../config.js'
 
 export function defaultSettingsFilePath(): string {
   return join(homedir(), '.dsh', 'sqs-dsh-better-input', 'settings.json')
@@ -40,14 +40,32 @@ function text(value: unknown): string {
  * Coerce an untrusted stored document into a complete settings object. Every
  * field falls back to its default, so a partially written or hand-edited file
  * still yields a usable value instead of throwing.
+ *
+ * Out-of-range numbers are repaired here, not merely defaulted: `merge()`
+ * validates the whole merged document before writing, so a value left over
+ * from an older schema (the recording limit used to allow 600 seconds; the
+ * ceiling is now dsh's own 120) would otherwise make *every* later save fail.
+ * `language` is narrowed onto a hint the local recognizer accepts for the same
+ * reason — `speechToText.resolve()` rejects an unadvertised language.
  */
 export function normalizeSettings(raw: unknown): BetterInputSettings {
   const record = isRecord(raw) ? raw : {}
+  const maxRecordingSeconds = record.maxRecordingSeconds
+  const segmentSeconds = record.segmentSeconds
+  const autoStopSeconds = record.autoStopSeconds
+  const contextTurns = record.contextTurns
   return {
-    language: text(record.language),
-    maxRecordingSeconds: typeof record.maxRecordingSeconds === 'number'
-      ? record.maxRecordingSeconds
+    language: normalizeSpeechLanguage(text(record.language)),
+    maxRecordingSeconds: typeof maxRecordingSeconds === 'number' && isValidRecordingLimit(maxRecordingSeconds)
+      ? maxRecordingSeconds
       : DEFAULT_SETTINGS.maxRecordingSeconds,
+    streamingPreview: record.streamingPreview !== false,
+    segmentSeconds: typeof segmentSeconds === 'number' && isValidSegmentSeconds(segmentSeconds)
+      ? segmentSeconds
+      : DEFAULT_SETTINGS.segmentSeconds,
+    autoStopSeconds: typeof autoStopSeconds === 'number' && isValidAutoStopSeconds(autoStopSeconds)
+      ? autoStopSeconds
+      : DEFAULT_SETTINGS.autoStopSeconds,
     polishingEnabled: record.polishingEnabled !== false,
     polishProvider: text(record.polishProvider),
     polishModel: text(record.polishModel),
@@ -58,7 +76,9 @@ export function normalizeSettings(raw: unknown): BetterInputSettings {
     optimizeModel: text(record.optimizeModel),
     optimizeReasoningEffort: text(record.optimizeReasoningEffort),
     optimizePrompt: typeof record.optimizePrompt === 'string' ? record.optimizePrompt : '',
-    contextTurns: typeof record.contextTurns === 'number' ? record.contextTurns : DEFAULT_SETTINGS.contextTurns,
+    contextTurns: typeof contextTurns === 'number' && isValidContextTurns(contextTurns)
+      ? contextTurns
+      : DEFAULT_SETTINGS.contextTurns,
   }
 }
 

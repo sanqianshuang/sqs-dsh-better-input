@@ -1,4 +1,4 @@
-import { aboutInfoSchema, betterInputSettingsPatchSchema, betterInputSettingsViewSchema, listRoutesResultSchema, optimizeResultSchema, polishResultSchema, resolveModelEffortsResultSchema, templateInputSchema, templateListResultSchema, templateRemoveResultSchema, templateSaveResultSchema, textSchema, updateCheckResultSchema } from './remote-contract.js'
+import { aboutInfoSchema, betterInputSettingsPatchSchema, betterInputSettingsViewSchema, listRoutesResultSchema, optimizeResultSchema, polishResultSchema, resolveModelEffortsResultSchema, speechStatusSchema, speechTranscriptSchema, templateInputSchema, templateListResultSchema, templateRemoveResultSchema, templateSaveResultSchema, textSchema, updateCheckResultSchema } from './remote-contract.js'
 import { PACKAGE_NAME } from './identity.js'
 
 /**
@@ -165,15 +165,47 @@ export const TYPERT = {
       parameters: [{ name: 'id', wire: 'id', source: 'json', codec: codec('string', textSchema) }],
       cancellation: { parameter: 'signal' },
       result: codec(symbol('TemplateRemoveResult'), templateRemoveResultSchema)
+    },
+    {
+      id: `${PACKAGE_NAME}#betterInput/speechStatus`,
+      service: 'BetterInputSpeech',
+      namespace: 'betterInput',
+      method: 'speechStatus',
+      invocation: { kind: 'direct' },
+      parameters: [],
+      result: codec(symbol('SpeechStatusView'), speechStatusSchema)
+    },
+    {
+      id: `${PACKAGE_NAME}#betterInput/speechPrepare`,
+      service: 'BetterInputSpeech',
+      namespace: 'betterInput',
+      method: 'speechPrepare',
+      invocation: { kind: 'direct' },
+      parameters: [{ name: 'providerId', wire: 'providerId', source: 'json', codec: codec('string', textSchema) }],
+      result: codec(symbol('SpeechStatusView'), speechStatusSchema)
+    },
+    {
+      id: `${PACKAGE_NAME}#betterInput/transcribeSpeech`,
+      service: 'BetterInputSpeech',
+      namespace: 'betterInput',
+      method: 'transcribeSpeech',
+      invocation: { kind: 'direct' },
+      parameters: [
+        { name: 'audioBase64', wire: 'audioBase64', source: 'json', codec: codec('string', textSchema) },
+        { name: 'language', wire: 'language', source: 'json', codec: codec('string', textSchema) }
+      ],
+      cancellation: { parameter: 'signal' },
+      result: codec(symbol('SpeechTranscriptView'), speechTranscriptSchema)
     }
   ],
   /**
    * The typed-registry model block.
    *
-   * This is REQUIRED by dsh 0.1.7's typert loader, not optional metadata:
+   * This is REQUIRED by dsh's typert loader, not optional metadata:
    * `validateTypertManifest` reads `manifest.model` and demands an object whose
    * `services` / `events` / `objects` are arrays (see `dsh-typert-loader/lib/index.js`
-   * :89-92, and `requireObject` at :119-122). A missing `model` fails the whole
+   * :89-92, and `requireObject` at :119-122 — unchanged in 0.2.0-rc.2). A missing
+   * `model` fails the whole
    * entry with "typert-loader: <pkg> TYPERT.model must be an object", the entry
    * never activates, and the browser web boot then refuses to render the UI.
    *
@@ -214,6 +246,23 @@ export const TYPERT = {
         { name: 'TemplateListResult', declaration: 'export interface TemplateListResult { templates: readonly BetterInputTemplate[] }' },
         { name: 'TemplateSaveResult', declaration: 'export interface TemplateSaveResult { template: BetterInputTemplate }' },
         { name: 'TemplateRemoveResult', declaration: 'export interface TemplateRemoveResult { removed: boolean }' }
+      ]
+    }, {
+      description: 'Host-side intake for the native dsh recognizers.',
+      summary: 'Native speech transcription service.',
+      tags: [],
+      jsDoc: '/** Host-side intake for the native dsh recognizers. */',
+      key: 'BetterInputSpeech',
+      exportName: 'BetterInputSpeechService',
+      members: [
+        { kind: 'method', name: 'speechStatus', signature: 'speechStatus(): Promise<SpeechStatusView>', summary: 'Read the registered dsh recognizers and their readiness.', jsDoc: '/** Read the registered dsh recognizers and their readiness. */' },
+        { kind: 'method', name: 'speechPrepare', signature: 'speechPrepare(providerId: string): Promise<SpeechStatusView>', summary: 'Start or join dsh-owned recognizer preparation.', jsDoc: '/** Start or join dsh-owned recognizer preparation. */' },
+        { kind: 'method', name: 'transcribeSpeech', signature: 'transcribeSpeech(audioBase64: string, language: string, signal: AbortSignal): Promise<SpeechTranscriptView>', summary: 'Transcribe one complete 16 kHz mono PCM16 WAV recording.', jsDoc: '/** Transcribe one complete 16 kHz mono PCM16 WAV recording. */' }
+      ],
+      types: [
+        { name: 'SpeechProviderStatus', declaration: 'export interface SpeechProviderStatus { id: string; name: string; location: string; languages: readonly string[]; preparation: string; detail: string }' },
+        { name: 'SpeechStatusView', declaration: 'export interface SpeechStatusView { service: boolean; available: boolean; providers: readonly SpeechProviderStatus[]; selection: { providerId: string; language: string } | null; maxRecordingSeconds: number; detail: string }' },
+        { name: 'SpeechTranscriptView', declaration: 'export interface SpeechTranscriptView { readonly text: string; readonly audioSeconds: number; readonly inferenceSeconds: number }' }
       ]
     }],
     events: [],

@@ -4,6 +4,8 @@ export declare const booleanSchema: z.ZodOptional<z.ZodBoolean>;
 export declare const betterInputSettingsSchema: z.ZodObject<{
     language: z.ZodString;
     maxRecordingSeconds: z.ZodNumber;
+    streamingPreview: z.ZodBoolean;
+    segmentSeconds: z.ZodNumber;
     polishingEnabled: z.ZodBoolean;
     polishProvider: z.ZodString;
     polishModel: z.ZodString;
@@ -19,6 +21,8 @@ export declare const betterInputSettingsSchema: z.ZodObject<{
 export declare const betterInputSettingsPatchSchema: z.ZodObject<{
     language: z.ZodOptional<z.ZodString>;
     maxRecordingSeconds: z.ZodOptional<z.ZodNumber>;
+    streamingPreview: z.ZodOptional<z.ZodBoolean>;
+    segmentSeconds: z.ZodOptional<z.ZodNumber>;
     polishingEnabled: z.ZodOptional<z.ZodBoolean>;
     polishProvider: z.ZodOptional<z.ZodString>;
     polishModel: z.ZodOptional<z.ZodString>;
@@ -37,6 +41,8 @@ export declare const betterInputSettingsViewSchema: z.ZodObject<{
     settings: z.ZodObject<{
         language: z.ZodString;
         maxRecordingSeconds: z.ZodNumber;
+        streamingPreview: z.ZodBoolean;
+        segmentSeconds: z.ZodNumber;
         polishingEnabled: z.ZodBoolean;
         polishProvider: z.ZodString;
         polishModel: z.ZodString;
@@ -141,6 +147,51 @@ export declare const aboutInfoSchema: z.ZodObject<{
     updateCommand: z.ZodString;
     updateCommandNpx: z.ZodString;
 }, z.core.$strip>;
+/**
+ * Speech schemas.
+ *
+ * `transcribeSpeech` carries one complete recording as base64. The Host
+ * validates size and the canonical WAV header itself (`src/speech/wave.ts`)
+ * before the bytes reach dsh's speech service.
+ */
+export declare const transcribeSpeechRequestSchema: z.ZodObject<{
+    audioBase64: z.ZodString;
+    language: z.ZodString;
+}, z.core.$strip>;
+export declare const speechTranscriptSchema: z.ZodObject<{
+    text: z.ZodString;
+    audioSeconds: z.ZodNumber;
+    inferenceSeconds: z.ZodNumber;
+}, z.core.$strip>;
+export declare const speechProviderStatusSchema: z.ZodObject<{
+    id: z.ZodString;
+    name: z.ZodString;
+    location: z.ZodString;
+    languages: z.ZodArray<z.ZodString>;
+    preparation: z.ZodString;
+    detail: z.ZodString;
+}, z.core.$strip>;
+export declare const speechStatusSchema: z.ZodObject<{
+    service: z.ZodBoolean;
+    available: z.ZodBoolean;
+    providers: z.ZodArray<z.ZodObject<{
+        id: z.ZodString;
+        name: z.ZodString;
+        location: z.ZodString;
+        languages: z.ZodArray<z.ZodString>;
+        preparation: z.ZodString;
+        detail: z.ZodString;
+    }, z.core.$strip>>;
+    selection: z.ZodNullable<z.ZodObject<{
+        providerId: z.ZodString;
+        language: z.ZodString;
+    }, z.core.$strip>>;
+    maxRecordingSeconds: z.ZodNumber;
+    detail: z.ZodString;
+}, z.core.$strip>;
+export declare const speechPrepareRequestSchema: z.ZodObject<{
+    providerId: z.ZodString;
+}, z.core.$strip>;
 export declare const updateCheckResultSchema: z.ZodObject<{
     status: z.ZodEnum<{
         "up-to-date": "up-to-date";
@@ -163,4 +214,7 @@ export type BetterInputSettingsViewWire = z.infer<typeof betterInputSettingsView
 export type PolishRouteWire = z.infer<typeof polishRouteSchema>;
 export type ReasoningEffortWire = z.infer<typeof reasoningEffortSchema>;
 export type ResolveModelEffortsResultWire = z.infer<typeof resolveModelEffortsResultSchema>;
-export type { BetterInputSettings, BetterInputSettingsPatch, BetterInputSettingsView, PolishRoute, ReasoningEffortInfo } from './config.js';
+export type SpeechTranscriptWire = z.infer<typeof speechTranscriptSchema>;
+export type SpeechStatusWire = z.infer<typeof speechStatusSchema>;
+export type SpeechProviderStatusWire = z.infer<typeof speechProviderStatusSchema>;
+export type { BetterInputSettings, BetterInputSettingsPatch, BetterInputSettingsView, PolishRoute, ReasoningEffortInfo, SpeechProviderStatus, SpeechStatusView, SpeechTranscriptView } from './config.js';

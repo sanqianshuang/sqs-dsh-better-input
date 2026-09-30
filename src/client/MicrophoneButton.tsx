@@ -1,9 +1,10 @@
 import { useEffect, useRef } from 'react'
 import type { SnapshotSelectorHook, TranslateNS } from '@deepseek-ai/dsh-client-ui-slots'
 import type { InputState } from '@deepseek-ai/dsh-client-ui-conversation/client'
-import { effectiveRecognitionLanguage, effectiveRecordingSeconds, type BetterInputSettings, type BetterInputSettingsPatch } from '../config.js'
+import { DEFAULT_SETTINGS, effectiveRecordingSeconds, type BetterInputSettings, type BetterInputSettingsPatch } from '../config.js'
 import type { BetterInputRemote } from '../remote.js'
-import { WebSpeechSession, isWebSpeechAvailable } from './web-speech.js'
+import { captureFailureMessage, NativeSpeechSession, sessionOptionsFor, type SpeechSessionSettings } from './native-speech.js'
+import { isCaptureSupported } from './audio-capture.js'
 import { useVoiceInputSession, type VoiceInputSession } from './voice-session.js'
 
 /** The framework-injected `t` seat for the BetterInput namespace. */
@@ -31,10 +32,15 @@ export type SettingsFace = {
 }
 
 /**
- * The microphone button in the composer tool row. Click to start listening,
- * click again to stop. Transcripts stream into the draft in real time; when
- * polishing is enabled, the committed transcript is polished through the Host
- * LLM route and replaces the draft (unless the user edited it meanwhile).
+ * The microphone button in the composer tool row. Click to start recording,
+ * click again to stop.
+ *
+ * The recording is transcribed by dsh's own local recognizer
+ * (`remote.transcribeSpeech` → `ctx.speechToText`, the SenseVoice provider from
+ * the optional voice-input bundle) instead of the browser's Web Speech API.
+ * While recording, the text of each finished segment streams into the draft;
+ * when the user stops, one pass over the whole recording produces the
+ * authoritative transcript and AI polishing runs on that.
  */
 export function MicrophoneButton({ useInput, inputActions, voiceSession, remote, useSettings, t }: InputZoneLikeProps) {
   const snapshot = useVoiceInputSession(voiceSession)
@@ -44,13 +50,17 @@ export function MicrophoneButton({ useInput, inputActions, voiceSession, remote,
   // hook. `InputState` keeps exposing `.draft` in dsh 0.1.2.
   const input = useInput((state) => state)
 
-  const speechRef = useRef<WebSpeechSession | null>(null)
+  const speechRef = useRef<NativeSpeechSession | null>(null)
   const baseDraftRef = useRef('')
   const mountedRef = useRef(true)
   const stopRef = useRef<(() => void) | null>(null)
   const polishAbortRef = useRef<AbortController | null>(null)
   const recordingTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const settingsRef = useRef<BetterInputSettings | null>(null)
+  /** First non-fatal transcription error of the current session, if any. */
+  const speechErrorRef = useRef<Error | null>(null)
+  /** Set when capture itself failed, which makes `onEnd` meaningless. */
+  const captureFailedRef = useRef(false)
   const settingsFace = useSettings()
   if (settingsFace.status === 'ready') settingsRef.current = settingsFace.settings
 
@@ -77,6 +87,7 @@ export function MicrophoneButton({ useInput, inputActions, voiceSession, remote,
       polishAbortRef.current?.abort()
       polishAbortRef.current = null
       clearRecordingTimer(recordingTimerRef)
+      voiceSession.meter.reset()
       voiceSession.setState('idle')
     }
   }, [voiceSession])
@@ -90,51 +101,85 @@ export function MicrophoneButton({ useInput, inputActions, voiceSession, remote,
   const polishModel = (settings?.polishModel ?? '').trim()
   const polishConfigured = polishingEnabled && polishProvider !== '' && polishModel !== ''
 
+  /** Localized capture failure; the kind decides which sentence the user sees. */
+  const captureDetail = (kind: string, message: string): string => {
+    if (kind === 'permission') return t('voicePermissionDenied')
+    if (kind === 'unavailable') return t('voiceCaptureUnavailable')
+    return message !== '' ? message : t('voiceFailed')
+  }
+
   const startListening = () => {
     if (active || busy) return
     const baseDraft = input.draft
     baseDraftRef.current = baseDraft
-    let sessionDraft = baseDraft
-    let failed = false
+    captureFailedRef.current = false
+    speechErrorRef.current = null
+    voiceSession.meter.reset()
     setState('starting')
 
-    let session: WebSpeechSession
-    try {
-      session = new WebSpeechSession({
-        language: effectiveRecognitionLanguage(settingsRef.current?.language ?? ''),
-        onInterim: (text) => {
-          sessionDraft = updateDraft(baseDraft, text)
-          inputActions.setDraft(sessionDraft)
-        },
-        onFinal: (text) => {
-          sessionDraft = updateDraft(baseDraft, text)
-          inputActions.setDraft(sessionDraft)
+    // Writing through one helper keeps the polish race check honest: the
+    // reference is always the exact text this session put in the draft.
+    const writeDraft = (text: string): string => {
+      const next = updateDraft(baseDraft, text)
+      latestDraftRef.current = next
+      inputActions.setDraft(next)
+      return next
+    }
+
+    const speechSettings: SpeechSessionSettings = settingsRef.current ?? DEFAULT_SETTINGS
+    const session = new NativeSpeechSession(
+      sessionOptionsFor(speechSettings, (audio, language, signal) => remote.transcribeSpeech(audio, language, signal), {
+        onPreview: (text) => {
+          if (!mountedRef.current || captureFailedRef.current) return
+          writeDraft(text)
         },
         onError: (error) => {
-          failed = true
-          setState('error', error.message)
+          const failure = captureFailureMessage(error)
+          // `interrupted` means the recording was cancelled on purpose.
+          if (failure.kind === 'interrupted') return
+          if (failure.kind !== '') {
+            // Capture itself failed: no transcript will arrive.
+            captureFailedRef.current = true
+            voiceSession.meter.reset()
+            if (mountedRef.current) setState('error', captureDetail(failure.kind, failure.message))
+            return
+          }
+          // A failed segment or final pass is only worth reporting when it
+          // changed the outcome, which the caller decides in `onEnd`.
+          speechErrorRef.current ??= error
+        },
+        onTick: (tick) => {
+          if (!mountedRef.current) return
+          voiceSession.meter.publish(tick)
+        },
+        onAutoStop: () => {
+          // The session is stopping itself on the silence timeout; the button
+          // only follows the state (its own `stopListening` is not involved).
+          clearRecordingTimer(recordingTimerRef)
+          if (mountedRef.current) setState('transcribing')
         },
         onEnd: (text) => {
           speechRef.current = null
           clearRecordingTimer(recordingTimerRef)
-          if (!mountedRef.current) return
+          voiceSession.meter.reset()
+          if (!mountedRef.current || captureFailedRef.current) return
           const transcript = text.trim()
-          if (failed) return
+          const speechError = speechErrorRef.current
+          speechErrorRef.current = null
           if (transcript === '') {
-            setState('idle')
+            if (speechError !== null) setState('error', speechError.message)
+            else setState('idle')
             return
           }
-          const draftAtStop = updateDraft(baseDraft, transcript)
-          inputActions.setDraft(draftAtStop)
-          latestDraftRef.current = draftAtStop
-          const settings = settingsRef.current
-          if (settings !== null && settings.polishingEnabled && settings.polishProvider.trim() !== '' && settings.polishModel.trim() !== '') {
+          const draftAtStop = writeDraft(transcript)
+          const current = settingsRef.current
+          if (current !== null && current.polishingEnabled && current.polishProvider.trim() !== '' && current.polishModel.trim() !== '') {
             void polishDraft({
               transcript,
               baseDraft,
               draftAtStop,
-              provider: settings.polishProvider,
-              model: settings.polishModel,
+              provider: current.polishProvider,
+              model: current.polishModel,
               remote,
               setState,
               latestDraftRef,
@@ -146,27 +191,27 @@ export function MicrophoneButton({ useInput, inputActions, voiceSession, remote,
           }
         }
       })
-    } catch (error) {
-      if (mountedRef.current) {
-        setState('error', error instanceof Error ? error.message : 'Speech recognition is unavailable in this browser')
-      }
-      return
-    }
+    )
 
     speechRef.current = session
-    session.start()
-    if (failed) return
-    setState('recording')
-    // Auto-stop at the configured recording limit so an abandoned session
-    // never holds the microphone forever.
-    armRecordingTimer(recordingTimerRef, effectiveRecordingSeconds(settingsRef.current ?? { maxRecordingSeconds: 120 }), () => {
-      speechRef.current?.stop()
+    void session.start().then(() => {
+      if (!mountedRef.current || speechRef.current !== session) return
+      if (!session.active) return
+      setState('recording')
+      // Auto-stop at the configured recording limit so an abandoned session
+      // never holds the microphone forever.
+      armRecordingTimer(recordingTimerRef, effectiveRecordingSeconds(settingsRef.current ?? DEFAULT_SETTINGS), () => {
+        speechRef.current?.stop()
+      })
     })
   }
 
   const stopListening = () => {
     clearRecordingTimer(recordingTimerRef)
     if (!active) return
+    // From here on the microphone is released and the authoritative pass runs;
+    // `transcribing` is also what makes this cancellable from the status bar.
+    setState('transcribing')
     speechRef.current?.stop()
   }
 
@@ -246,9 +291,15 @@ export async function polishDraft(options: PolishDraftOptions): Promise<void> {
 }
 
 /**
- * Only replace the draft when the user has not edited it since the transcript
- * landed. Both the transcript-at-stop and the base draft count as unchanged
- * (the user may have reverted the interim edits).
+ * Only replace the draft when the user has not edited it since our own last
+ * write. Both the text we wrote last (`draftAtStop` — the finished transcript,
+ * or the last streamed preview segment) and the untouched base draft count as
+ * unchanged.
+ *
+ * This matters more since the preview became segmented: the text on screen
+ * while recording is a *preview*, and the authoritative transcript that arrives
+ * after stopping can differ from it. Comparing against the text this session
+ * wrote is what keeps a user's mid-recording edit from being overwritten.
  */
 export function shouldApplyPolishResult(currentDraft: string, draftAtStop: string, baseDraft: string): boolean {
   const current = collapseDraft(currentDraft)
@@ -318,7 +369,7 @@ function clearRecordingTimer(timerRef: { current: ReturnType<typeof setTimeout> 
 }
 
 export function isSupported(): boolean {
-  return isWebSpeechAvailable()
+  return isCaptureSupported()
 }
 
 export type { BetterInputSettingsPatch }

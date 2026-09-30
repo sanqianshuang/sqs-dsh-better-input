@@ -1,11 +1,29 @@
 import { useEffect, useRef, useState } from 'react'
-import type { BetterInputSettings, BetterInputSettingsPatch, ReasoningEffortInfo } from '../config.js'
+import { MAX_AUTO_STOP_SECONDS, MAX_SEGMENT_SECONDS, MIN_AUTO_STOP_SECONDS, MIN_SEGMENT_SECONDS, SPEECH_LANGUAGE_HINTS, SPEECH_MAX_RECORDING_SECONDS, type BetterInputSettings, type BetterInputSettingsPatch, type ReasoningEffortInfo } from '../config.js'
 import type { TranslateNS } from '@deepseek-ai/dsh-client-ui-slots'
 import type { SettingsController, UpdateSnapshot } from './settings-controller.js'
-import { useAboutSnapshot, useEffortsSnapshot, useSettingsSnapshot, useRoutesSnapshot, useUpdateSnapshot } from './settings-controller.js'
+import { useAboutSnapshot, useEffortsSnapshot, useSettingsSnapshot, useRoutesSnapshot, useSpeechSnapshot, useUpdateSnapshot } from './settings-controller.js'
 
 /** The framework-injected `t` seat for the BetterInput namespace. */
 type Translate = TranslateNS<'better-input'>
+
+/** Endonyms: a language picker is more useful in the language itself. */
+const SPEECH_LANGUAGE_NAMES: Record<string, string> = {
+  zh: '中文',
+  en: 'English',
+  ja: '日本語',
+  ko: '한국어'
+}
+
+function speechLanguageLabel(hint: string, t: Translate): string {
+  if (hint === 'yue') return t('languageCantonese')
+  return SPEECH_LANGUAGE_NAMES[hint] ?? hint
+}
+
+/** Host-owned preparation phases that are still in flight. */
+function isPreparingPhase(phase: string): boolean {
+  return phase === 'checking' || phase === 'loading' || phase === 'waking' || phase === 'cancelling' || phase === 'downloading'
+}
 
 function ReasoningEffortSelect(props: {
   settingsController: SettingsController
@@ -81,6 +99,7 @@ export function BetterInputSettingsSection({ close, settingsController, t }: Set
   const routes = useRoutesSnapshot(settingsController)
   const about = useAboutSnapshot(settingsController)
   const update = useUpdateSnapshot(settingsController)
+  const speech = useSpeechSnapshot(settingsController)
   const [drafts, setDrafts] = useState<Record<string, string>>({})
   const [saveFailed, setSaveFailed] = useState(false)
   const [showDefaultPrompt, setShowDefaultPrompt] = useState(false)
@@ -92,7 +111,27 @@ export function BetterInputSettingsSection({ close, settingsController, t }: Set
     void settingsController.refreshSettings()
     void settingsController.refreshRoutes()
     void settingsController.refreshAbout()
+    void settingsController.refreshSpeechStatus()
   }, [settingsController])
+
+  // While dsh prepares a recognizer (first-use model download), poll so the
+  // page shows real progress; preparation is Host-owned and outlives a reload.
+  // A short poll also covers the moment after Host start, when the local
+  // provider is still inspecting its model cache and the roster is empty.
+  const speechAwaitingRoster = speech.status === 'ready' && speech.view.service && !speech.view.available
+  const speechPreparing = speech.preparing || speech.view.providers.some((provider) => isPreparingPhase(provider.preparation))
+  useEffect(() => {
+    if (!speechPreparing && !speechAwaitingRoster) return
+    // Bounded: the roster settles within a few seconds of Host start, and an
+    // endless poll would keep a dead service busy forever.
+    let remaining = 20
+    const timer = setInterval(() => {
+      remaining -= 1
+      if (remaining <= 0) clearInterval(timer)
+      void settingsController.refreshSpeechStatus()
+    }, 1000)
+    return () => clearInterval(timer)
+  }, [settingsController, speechPreparing, speechAwaitingRoster])
 
   if (settings.status === 'loading' || routes.status === 'loading') {
     return <SectionFrame title={t('settingsTitle')}>{t('loading')}</SectionFrame>
@@ -122,11 +161,18 @@ export function BetterInputSettingsSection({ close, settingsController, t }: Set
   }
 
   const s = settings.view.settings
-  const languageField = field('language', s.language)
   const secondsField = field('maxRecordingSeconds', String(s.maxRecordingSeconds))
+  const segmentField = field('segmentSeconds', String(s.segmentSeconds))
+  const autoStopField = field('autoStopSeconds', String(s.autoStopSeconds))
   const polishPromptField = field('polishPrompt', s.polishPrompt)
   const optimizePromptField = field('optimizePrompt', s.optimizePrompt)
   const contextTurnsField = field('contextTurns', String(s.contextTurns))
+  const maxRecordingSeconds = speech.view.available ? speech.view.maxRecordingSeconds : SPEECH_MAX_RECORDING_SECONDS
+  // The recognizer `resolve()` will actually pick: the saved selection, or the
+  // first registered one when nothing has been chosen yet.
+  const provider = speech.view.providers.find((item) => item.id === speech.view.selection?.providerId) ?? speech.view.providers[0]
+  const speechReady = provider !== undefined && (provider.preparation === 'ready' || provider.preparation === 'standby')
+  const speechNeedsPrepare = provider !== undefined && !speechReady && !isPreparingPhase(provider.preparation)
 
   return (
     <SectionFrame title={t('settingsTitle')}>
@@ -136,28 +182,109 @@ export function BetterInputSettingsSection({ close, settingsController, t }: Set
 
       <h3 style={sectionTitleStyle}>{t('voiceSectionLabel')}</h3>
 
+      <Field label={t('speechStatusLabel')} hint={speech.status === 'error' ? speech.detail : speech.view.detail}>
+        <div style={statusRowStyle}>
+          <span style={speechReady ? statusOkStyle : statusWarnStyle}>
+            {speech.status === 'loading'
+              ? t('loading')
+              : speechReady
+                ? `${provider?.name ?? ''} · ${t('speechStatusReady')}`
+                : speech.view.service && !speech.view.available
+                  ? t('speechStatusPreparing')
+                  : isPreparingPhase(provider?.preparation ?? '')
+                    ? t('speechStatusPreparing')
+                    : t('speechStatusUnavailable')}
+          </span>
+          {provider !== undefined && provider.detail !== '' ? (
+            <span style={statusDetailStyle}>{provider.detail}</span>
+          ) : null}
+          {speechNeedsPrepare ? (
+            <button
+              type="button"
+              style={toggleLinkStyle}
+              onClick={() => void settingsController.prepareSpeech(provider?.id ?? '')}
+            >
+              {t('speechPrepareButton')}
+            </button>
+          ) : null}
+          {speech.preparing ? <span style={statusDetailStyle}>{t('speechPrepareBusy')}</span> : null}
+        </div>
+      </Field>
+
       <Field label={t('languageLabel')} hint={t('languageHint')}>
-        <input
-          type="text"
-          value={languageField.text}
-          placeholder={t('languagePlaceholder')}
-          onChange={(event) => setField('language', event.target.value)}
-          onBlur={() => void save({ language: languageField.text.trim() })}
+        <select
+          value={s.language}
+          onChange={(event) => void save({ language: event.target.value })}
           style={inputStyle}
-        />
+        >
+          <option value="">{t('languageAuto')}</option>
+          {SPEECH_LANGUAGE_HINTS.map((hint) => (
+            <option key={hint} value={hint}>
+              {speechLanguageLabel(hint, t)}
+            </option>
+          ))}
+        </select>
       </Field>
 
       <Field label={t('recordingLimitLabel')} hint={t('recordingLimitHint')}>
         <input
           type="number"
           min={1}
-          max={600}
+          max={maxRecordingSeconds}
           value={secondsField.text}
           onChange={(event) => setField('maxRecordingSeconds', event.target.value)}
           onBlur={() => {
             const parsed = Number(secondsField.text)
-            if (!Number.isSafeInteger(parsed) || parsed < 1 || parsed > 600) return
+            if (!Number.isSafeInteger(parsed) || parsed < 1 || parsed > maxRecordingSeconds) return
             void save({ maxRecordingSeconds: parsed })
+          }}
+          style={inputStyle}
+        />
+      </Field>
+
+      <Field label={t('streamingPreviewLabel')} hint={t('streamingPreviewHint')}>
+        <label style={switchStyle}>
+          <input
+            type="checkbox"
+            checked={s.streamingPreview}
+            onChange={(event) => void save({ streamingPreview: event.target.checked })}
+          />
+          <span>{s.streamingPreview ? t('on') : t('off')}</span>
+        </label>
+      </Field>
+
+      {s.streamingPreview ? (
+        <Field label={t('segmentSecondsLabel')} hint={t('segmentSecondsHint')}>
+          <input
+            type="number"
+            min={MIN_SEGMENT_SECONDS}
+            max={MAX_SEGMENT_SECONDS}
+            value={segmentField.text}
+            onChange={(event) => setField('segmentSeconds', event.target.value)}
+            onBlur={() => {
+              const parsed = Number(segmentField.text)
+              if (!Number.isSafeInteger(parsed) || parsed < MIN_SEGMENT_SECONDS || parsed > MAX_SEGMENT_SECONDS) return
+              void save({ segmentSeconds: parsed })
+            }}
+            style={inputStyle}
+          />
+        </Field>
+      ) : null}
+
+      <Field label={t('autoStopLabel')} hint={t('autoStopHint')}>
+        <input
+          type="number"
+          min={0}
+          max={MAX_AUTO_STOP_SECONDS}
+          value={autoStopField.text}
+          onChange={(event) => setField('autoStopSeconds', event.target.value)}
+          onBlur={() => {
+            const parsed = Number(autoStopField.text)
+            // `0` means "off"; anything else must be a usable window, so a
+            // value in 1–2 is rejected rather than stored and repaired later.
+            if (!Number.isSafeInteger(parsed) || parsed < 0 || parsed > MAX_AUTO_STOP_SECONDS) return
+            if (parsed !== 0 && parsed < MIN_AUTO_STOP_SECONDS) return
+            void save({ autoStopSeconds: parsed })
           }}
           style={inputStyle}
         />
@@ -494,6 +621,27 @@ const errorStyle: React.CSSProperties = {
   margin: 0,
   fontSize: 12,
   color: 'var(--dsw-alias-state-error-primary, #e5484d)'
+}
+
+const statusRowStyle: React.CSSProperties = {
+  display: 'flex',
+  alignItems: 'center',
+  flexWrap: 'wrap',
+  gap: 8,
+  fontSize: 13
+}
+
+const statusOkStyle: React.CSSProperties = {
+  color: 'var(--dsw-alias-state-success-primary, #2f9e44)'
+}
+
+const statusWarnStyle: React.CSSProperties = {
+  color: 'var(--dsw-alias-state-warning-primary, #b8860b)'
+}
+
+const statusDetailStyle: React.CSSProperties = {
+  opacity: 0.7,
+  fontSize: 12
 }
 
 const switchStyle: React.CSSProperties = {

@@ -25,10 +25,15 @@ export type SettingsFace = {
     readonly settings: BetterInputSettings;
 };
 /**
- * The microphone button in the composer tool row. Click to start listening,
- * click again to stop. Transcripts stream into the draft in real time; when
- * polishing is enabled, the committed transcript is polished through the Host
- * LLM route and replaces the draft (unless the user edited it meanwhile).
+ * The microphone button in the composer tool row. Click to start recording,
+ * click again to stop.
+ *
+ * The recording is transcribed by dsh's own local recognizer
+ * (`remote.transcribeSpeech` → `ctx.speechToText`, the SenseVoice provider from
+ * the optional voice-input bundle) instead of the browser's Web Speech API.
+ * While recording, the text of each finished segment streams into the draft;
+ * when the user stops, one pass over the whole recording produces the
+ * authoritative transcript and AI polishing runs on that.
  */
 export declare function MicrophoneButton({ useInput, inputActions, voiceSession, remote, useSettings, t }: InputZoneLikeProps): import("react").JSX.Element;
 export interface PolishDraftOptions {
@@ -53,9 +58,15 @@ export interface PolishDraftOptions {
 }
 export declare function polishDraft(options: PolishDraftOptions): Promise<void>;
 /**
- * Only replace the draft when the user has not edited it since the transcript
- * landed. Both the transcript-at-stop and the base draft count as unchanged
- * (the user may have reverted the interim edits).
+ * Only replace the draft when the user has not edited it since our own last
+ * write. Both the text we wrote last (`draftAtStop` — the finished transcript,
+ * or the last streamed preview segment) and the untouched base draft count as
+ * unchanged.
+ *
+ * This matters more since the preview became segmented: the text on screen
+ * while recording is a *preview*, and the authoritative transcript that arrives
+ * after stopping can differ from it. Comparing against the text this session
+ * wrote is what keeps a user's mid-recording edit from being overwritten.
  */
 export declare function shouldApplyPolishResult(currentDraft: string, draftAtStop: string, baseDraft: string): boolean;
 /** Append transcript to a base draft with one space separator. */

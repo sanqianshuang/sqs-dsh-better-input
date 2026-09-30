@@ -1,6 +1,6 @@
 import type { RemoteResult, TypertRemoteContribution } from '@deepseek-ai/dsh-typert-protocol';
 import type { ClientRemote } from '@deepseek-ai/dsh-api-remotes/client';
-import type { AboutInfoWire, BetterInputSettingsPatch, BetterInputSettingsView, PolishRoute, ReasoningEffortInfo, TemplateInputWire, TemplateWire, UpdateCheckResultWire } from './remote-contract.js';
+import type { AboutInfoWire, BetterInputSettingsPatch, BetterInputSettingsView, PolishRoute, ReasoningEffortInfo, SpeechStatusWire, SpeechTranscriptWire, TemplateInputWire, TemplateWire, UpdateCheckResultWire } from './remote-contract.js';
 export type BetterInputRemote = ClientRemote['betterInput'];
 declare module '@deepseek-ai/dsh-typert-protocol' {
     interface TypertRemoteNamespace$betterInput {
@@ -24,6 +24,9 @@ declare module '@deepseek-ai/dsh-typert-protocol' {
         templatesRemove: (id: string, signal?: AbortSignal) => Promise<RemoteResult<{
             removed: boolean;
         }>>;
+        speechStatus: () => Promise<RemoteResult<SpeechStatusWire>>;
+        speechPrepare: (providerId: string) => Promise<RemoteResult<SpeechStatusWire>>;
+        transcribeSpeech: (audioBase64: string, language: string, signal?: AbortSignal) => Promise<RemoteResult<SpeechTranscriptWire>>;
     }
     interface TypertRemoteMap {
         'betterInput/getSettings': () => Promise<RemoteResult<BetterInputSettingsView>>;
@@ -46,6 +49,9 @@ declare module '@deepseek-ai/dsh-typert-protocol' {
         'betterInput/templatesRemove': (id: string, signal?: AbortSignal) => Promise<RemoteResult<{
             removed: boolean;
         }>>;
+        'betterInput/speechStatus': () => Promise<RemoteResult<SpeechStatusWire>>;
+        'betterInput/speechPrepare': (providerId: string) => Promise<RemoteResult<SpeechStatusWire>>;
+        'betterInput/transcribeSpeech': (audioBase64: string, language: string, signal?: AbortSignal) => Promise<RemoteResult<SpeechTranscriptWire>>;
     }
     interface TypertRemoteNamespaceMap {
         betterInput: TypertRemoteNamespace$betterInput;

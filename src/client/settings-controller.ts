@@ -1,6 +1,6 @@
 import { useSyncExternalStore } from 'react'
 import { DEFAULT_SETTINGS, type BetterInputSettings, type BetterInputSettingsPatch, type BetterInputSettingsView, type PolishRoute, type ReasoningEffortInfo } from '../config.js'
-import type { AboutInfoWire, UpdateCheckResultWire } from '../remote-contract.js'
+import type { AboutInfoWire, SpeechStatusWire, UpdateCheckResultWire } from '../remote-contract.js'
 import type { BetterInputRemote } from '../remote.js'
 
 export type SettingsStatus = 'loading' | 'ready' | 'error'
@@ -39,6 +39,23 @@ export type UpdateSnapshot = {
   readonly detail: string
 }
 
+export type SpeechSnapshot = {
+  readonly status: 'loading' | 'ready' | 'error'
+  readonly view: SpeechStatusWire
+  /** True while a prepare request is in flight, so the button can be disabled. */
+  readonly preparing: boolean
+  readonly detail: string
+}
+
+const EMPTY_SPEECH: SpeechStatusWire = {
+  service: false,
+  available: false,
+  providers: [],
+  selection: null,
+  maxRecordingSeconds: 120,
+  detail: ''
+}
+
 const EMPTY_ABOUT: AboutInfoWire = {
   repository: '',
   repositorySlug: '',
@@ -72,6 +89,7 @@ export class SettingsController {
   private effortsSnapshot: EffortsSnapshot = {}
   private aboutSnapshot: AboutSnapshot = { status: 'loading', about: EMPTY_ABOUT, detail: '' }
   private updateSnapshot: UpdateSnapshot = { status: 'idle', update: null, detail: '' }
+  private speechSnapshot: SpeechSnapshot = { status: 'loading', view: EMPTY_SPEECH, preparing: false, detail: '' }
   private readonly listeners = new Set<Listener>()
   private disposed = false
 
@@ -86,6 +104,8 @@ export class SettingsController {
   readonly getAboutSnapshot = (): AboutSnapshot => this.aboutSnapshot
 
   readonly getUpdateSnapshot = (): UpdateSnapshot => this.updateSnapshot
+
+  readonly getSpeechSnapshot = (): SpeechSnapshot => this.speechSnapshot
 
   readonly subscribe = (listener: Listener): (() => void) => {
     this.listeners.add(listener)
@@ -108,6 +128,68 @@ export class SettingsController {
       void this.autoPopulateDefaultRoutesIfNeeded(result.value.settings)
     }
     this.emit()
+  }
+
+  /**
+   * Read dsh's speech service status through the plugin's Remote.
+   *
+   * Never fails the page: an unavailable or provider-less speech service is a
+   * legitimate state (`available: false`), so the page explains it instead of
+   * showing a request error.
+   */
+  async refreshSpeechStatus(): Promise<void> {
+    const preparing = this.speechSnapshot.preparing
+    let next: SpeechSnapshot
+    try {
+      const result = await this.remote.speechStatus()
+      if (this.disposed) return
+      next = result.ok
+        ? { status: 'ready', view: result.value, preparing, detail: '' }
+        : { status: 'error', view: EMPTY_SPEECH, preparing, detail: result.error.message }
+    } catch (error) {
+      if (this.disposed) return
+      next = {
+        status: 'error',
+        view: EMPTY_SPEECH,
+        preparing,
+        detail: error instanceof Error ? error.message : String(error)
+      }
+    }
+    this.speechSnapshot = next
+    this.emit()
+  }
+
+  /** Start (or join) dsh's provider-owned preparation task, then re-read status. */
+  async prepareSpeech(providerId: string): Promise<boolean> {
+    if (this.speechSnapshot.preparing) return false
+    this.speechSnapshot = { ...this.speechSnapshot, preparing: true }
+    this.emit()
+    let ok = false
+    try {
+      const result = await this.remote.speechPrepare(providerId)
+      ok = result.ok
+      if (this.disposed) return ok
+      if (!result.ok) {
+        this.speechSnapshot = { status: 'error', view: EMPTY_SPEECH, preparing: false, detail: result.error.message }
+        this.emit()
+        return false
+      }
+      this.speechSnapshot = { status: 'ready', view: result.value, preparing: false, detail: '' }
+      this.emit()
+      return true
+    } catch (error) {
+      if (this.disposed) return false
+      this.speechSnapshot = {
+        status: 'error',
+        view: EMPTY_SPEECH,
+        preparing: false,
+        detail: error instanceof Error ? error.message : String(error)
+      }
+      this.emit()
+      return false
+    } finally {
+      if (ok) await this.refreshSpeechStatus()
+    }
   }
 
   async refreshRoutes(): Promise<void> {
@@ -266,4 +348,8 @@ export function useAboutSnapshot(controller: SettingsController): AboutSnapshot 
 
 export function useUpdateSnapshot(controller: SettingsController): UpdateSnapshot {
   return useSyncExternalStore(controller.subscribe, controller.getUpdateSnapshot, controller.getUpdateSnapshot)
+}
+
+export function useSpeechSnapshot(controller: SettingsController): SpeechSnapshot {
+  return useSyncExternalStore(controller.subscribe, controller.getSpeechSnapshot, controller.getSpeechSnapshot)
 }

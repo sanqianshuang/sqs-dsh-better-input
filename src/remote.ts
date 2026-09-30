@@ -1,6 +1,6 @@
 import type { RemoteResult, TypertRemoteContribution } from '@deepseek-ai/dsh-typert-protocol'
 import type { ClientRemote } from '@deepseek-ai/dsh-api-remotes/client'
-import type { AboutInfoWire, BetterInputSettingsPatch, BetterInputSettingsView, PolishRoute, ReasoningEffortInfo, TemplateInputWire, TemplateWire, UpdateCheckResultWire } from './remote-contract.js'
+import type { AboutInfoWire, BetterInputSettingsPatch, BetterInputSettingsView, PolishRoute, ReasoningEffortInfo, SpeechStatusWire, SpeechTranscriptWire, TemplateInputWire, TemplateWire, UpdateCheckResultWire } from './remote-contract.js'
 import { PACKAGE_NAME } from './identity.js'
 
 export type BetterInputRemote = ClientRemote['betterInput']
@@ -18,6 +18,9 @@ declare module '@deepseek-ai/dsh-typert-protocol' {
     templatesList: () => Promise<RemoteResult<{ templates: TemplateWire[] }>>
     templatesSave: (template: TemplateInputWire, signal?: AbortSignal) => Promise<RemoteResult<{ template: TemplateWire }>>
     templatesRemove: (id: string, signal?: AbortSignal) => Promise<RemoteResult<{ removed: boolean }>>
+    speechStatus: () => Promise<RemoteResult<SpeechStatusWire>>
+    speechPrepare: (providerId: string) => Promise<RemoteResult<SpeechStatusWire>>
+    transcribeSpeech: (audioBase64: string, language: string, signal?: AbortSignal) => Promise<RemoteResult<SpeechTranscriptWire>>
   }
 
   interface TypertRemoteMap {
@@ -32,6 +35,9 @@ declare module '@deepseek-ai/dsh-typert-protocol' {
     'betterInput/templatesList': () => Promise<RemoteResult<{ templates: TemplateWire[] }>>
     'betterInput/templatesSave': (template: TemplateInputWire, signal?: AbortSignal) => Promise<RemoteResult<{ template: TemplateWire }>>
     'betterInput/templatesRemove': (id: string, signal?: AbortSignal) => Promise<RemoteResult<{ removed: boolean }>>
+    'betterInput/speechStatus': () => Promise<RemoteResult<SpeechStatusWire>>
+    'betterInput/speechPrepare': (providerId: string) => Promise<RemoteResult<SpeechStatusWire>>
+    'betterInput/transcribeSpeech': (audioBase64: string, language: string, signal?: AbortSignal) => Promise<RemoteResult<SpeechTranscriptWire>>
   }
 
   interface TypertRemoteNamespaceMap {
@@ -44,7 +50,8 @@ declare module '@deepseek-ai/dsh-typert-protocol' {
  *
  * The client face exists only to describe the wire shape to
  * `ctx.remote.$mount`; the actual byte validation happens on the Host. This is
- * not an assumption — it is how dsh 0.1.7 is wired:
+ * not an assumption — it is how dsh is wired (verified as recently as
+ * 0.2.0-rc.2; the client carrier below is byte-identical to 0.1.7-rc.2):
  *
  *   - `@deepseek-ai/dsh-api-gateway/lib/index.js` (Host) is the ONLY place that
  *     runs `codec.create().parse(value)`. Validation lives in `decode()`.
@@ -217,6 +224,37 @@ export const TYPERT_REMOTE: TypertRemoteContribution = {
       parameters: [{ name: 'id', wire: 'id', source: 'json', codec: codec('string') }],
       cancellation: { parameter: 'signal' },
       result: codec(symbol('TemplateRemoveResult'))
+    },
+    {
+      id: `${PACKAGE_NAME}#betterInput/speechStatus`,
+      service: 'BetterInputSpeech',
+      namespace: 'betterInput',
+      method: 'speechStatus',
+      invocation: { kind: 'direct' },
+      parameters: [],
+      result: codec(symbol('SpeechStatusView'))
+    },
+    {
+      id: `${PACKAGE_NAME}#betterInput/speechPrepare`,
+      service: 'BetterInputSpeech',
+      namespace: 'betterInput',
+      method: 'speechPrepare',
+      invocation: { kind: 'direct' },
+      parameters: [{ name: 'providerId', wire: 'providerId', source: 'json', codec: codec('string') }],
+      result: codec(symbol('SpeechStatusView'))
+    },
+    {
+      id: `${PACKAGE_NAME}#betterInput/transcribeSpeech`,
+      service: 'BetterInputSpeech',
+      namespace: 'betterInput',
+      method: 'transcribeSpeech',
+      invocation: { kind: 'direct' },
+      parameters: [
+        { name: 'audioBase64', wire: 'audioBase64', source: 'json', codec: codec('string') },
+        { name: 'language', wire: 'language', source: 'json', codec: codec('string') }
+      ],
+      cancellation: { parameter: 'signal' },
+      result: codec(symbol('SpeechTranscriptView'))
     }
   ]
 }

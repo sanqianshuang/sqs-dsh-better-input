@@ -1,5 +1,5 @@
 import { type BetterInputSettingsPatch, type BetterInputSettingsView, type PolishRoute, type ReasoningEffortInfo } from '../config.js';
-import type { AboutInfoWire, UpdateCheckResultWire } from '../remote-contract.js';
+import type { AboutInfoWire, SpeechStatusWire, UpdateCheckResultWire } from '../remote-contract.js';
 import type { BetterInputRemote } from '../remote.js';
 export type SettingsStatus = 'loading' | 'ready' | 'error';
 export type SettingsSnapshot = {
@@ -31,6 +31,13 @@ export type UpdateSnapshot = {
     readonly update: UpdateCheckResultWire | null;
     readonly detail: string;
 };
+export type SpeechSnapshot = {
+    readonly status: 'loading' | 'ready' | 'error';
+    readonly view: SpeechStatusWire;
+    /** True while a prepare request is in flight, so the button can be disabled. */
+    readonly preparing: boolean;
+    readonly detail: string;
+};
 type Listener = () => void;
 /**
  * Settings read/write controller for the settings page and the microphone
@@ -46,6 +53,7 @@ export declare class SettingsController {
     private effortsSnapshot;
     private aboutSnapshot;
     private updateSnapshot;
+    private speechSnapshot;
     private readonly listeners;
     private disposed;
     constructor(remote: BetterInputRemote);
@@ -54,8 +62,19 @@ export declare class SettingsController {
     readonly getEffortsSnapshot: () => EffortsSnapshot;
     readonly getAboutSnapshot: () => AboutSnapshot;
     readonly getUpdateSnapshot: () => UpdateSnapshot;
+    readonly getSpeechSnapshot: () => SpeechSnapshot;
     readonly subscribe: (listener: Listener) => (() => void);
     refreshSettings(): Promise<void>;
+    /**
+     * Read dsh's speech service status through the plugin's Remote.
+     *
+     * Never fails the page: an unavailable or provider-less speech service is a
+     * legitimate state (`available: false`), so the page explains it instead of
+     * showing a request error.
+     */
+    refreshSpeechStatus(): Promise<void>;
+    /** Start (or join) dsh's provider-owned preparation task, then re-read status. */
+    prepareSpeech(providerId: string): Promise<boolean>;
     refreshRoutes(): Promise<void>;
     private readonly autoPopulateDefaultRoutesIfNeeded;
     update(patch: BetterInputSettingsPatch): Promise<boolean>;
@@ -77,4 +96,5 @@ export declare function useRoutesSnapshot(controller: SettingsController): Route
 export declare function useEffortsSnapshot(controller: SettingsController): EffortsSnapshot;
 export declare function useAboutSnapshot(controller: SettingsController): AboutSnapshot;
 export declare function useUpdateSnapshot(controller: SettingsController): UpdateSnapshot;
+export declare function useSpeechSnapshot(controller: SettingsController): SpeechSnapshot;
 export {};

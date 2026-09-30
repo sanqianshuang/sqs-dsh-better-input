@@ -8,8 +8,14 @@ export type BetterInputStrings = {
   voiceStart: string
   voiceStop: string
   voiceBusy: string
-  voiceUnavailable: string
+  voicePermissionDenied: string
+  voiceCaptureUnavailable: string
   listening: string
+  voiceCancel: string
+  autoStopIn: string
+  autoStopTitle: string
+  autoStopLabel: string
+  autoStopHint: string
   transcribing: string
   polishing: string
   voiceFailed: string
@@ -21,9 +27,20 @@ export type BetterInputStrings = {
   saveFailed: string
   languageLabel: string
   languageHint: string
-  languagePlaceholder: string
+  languageAuto: string
+  languageCantonese: string
+  speechStatusLabel: string
+  speechStatusReady: string
+  speechStatusUnavailable: string
+  speechStatusPreparing: string
+  speechPrepareButton: string
+  speechPrepareBusy: string
   recordingLimitLabel: string
   recordingLimitHint: string
+  streamingPreviewLabel: string
+  streamingPreviewHint: string
+  segmentSecondsLabel: string
+  segmentSecondsHint: string
   polishLabel: string
   polishHint: string
   on: string
@@ -105,8 +122,14 @@ export const zh: BetterInputStrings = {
   voiceStart: '语音输入',
   voiceStop: '停止语音输入',
   voiceBusy: '正在处理…',
-  voiceUnavailable: '此浏览器不支持语音识别',
+  voicePermissionDenied: '麦克风权限被拒绝',
+  voiceCaptureUnavailable: '无法访问麦克风（需要 HTTPS 或 localhost）',
   listening: '正在聆听…',
+  voiceCancel: '取消',
+  autoStopIn: '{seconds} 秒后自动停止',
+  autoStopTitle: '说完后静音 {seconds} 秒会自动停止并开始转写',
+  autoStopLabel: '静音自动停止（秒）',
+  autoStopHint: '说话后静音这么久就自动停止并开始转写；0 为关闭。默认 10 秒；关闭后只受“单次录音上限”约束。',
   transcribing: '正在转写…',
   polishing: '正在润色…',
   voiceFailed: '语音输入失败',
@@ -117,10 +140,21 @@ export const zh: BetterInputStrings = {
   loading: '加载中…',
   saveFailed: '保存失败，请重试',
   languageLabel: '识别语言',
-  languageHint: '留空时跟随浏览器语言。',
-  languagePlaceholder: '例如 zh-CN 或 en-US',
+  languageHint: '由 dsh 本地识别器（SenseVoice）提供，选「自动检测」时由模型判断语种。',
+  languageAuto: '自动检测',
+  languageCantonese: '粤语',
+  speechStatusLabel: '本地识别器',
+  speechStatusReady: '已就绪',
+  speechStatusUnavailable: '不可用',
+  speechStatusPreparing: '准备中',
+  speechPrepareButton: '下载并准备模型',
+  speechPrepareBusy: '准备中…',
   recordingLimitLabel: '单次录音上限（秒）',
-  recordingLimitHint: '1–600 秒。',
+  recordingLimitHint: '1–120 秒。上限来自 dsh 本地识别服务（16 kHz 单声道）。',
+  streamingPreviewLabel: '边录边出字（分段预览）',
+  streamingPreviewHint: '边说边把分段转写流式写入输入框；停止后再用整段录音重转一次作为最终稿，然后润色。关闭则只在停止后转写一次。',
+  segmentSecondsLabel: '分段长度（秒）',
+  segmentSecondsHint: '1–10 秒，默认 3。优先在静音处切分；越短上屏越快、越容易切断词。',
   polishLabel: 'AI 润色',
   polishHint: '识别完成后用大模型清理转写文本（去口头禅、修正同音错字、加标点）。',
   on: '开',
@@ -202,8 +236,14 @@ export const en: BetterInputStrings = {
   voiceStart: 'Voice input',
   voiceStop: 'Stop voice input',
   voiceBusy: 'Processing…',
-  voiceUnavailable: 'Speech recognition is not supported in this browser',
+  voicePermissionDenied: 'Microphone permission was denied',
+  voiceCaptureUnavailable: 'Cannot access the microphone (HTTPS or localhost required)',
   listening: 'Listening…',
+  voiceCancel: 'Cancel',
+  autoStopIn: 'Auto-stop in {seconds}s',
+  autoStopTitle: 'Stops and transcribes after {seconds} seconds without speech',
+  autoStopLabel: 'Auto-stop after silence (seconds)',
+  autoStopHint: 'Stop and transcribe once this many seconds pass without speech; 0 disables it. 10 by default; with it off only the recording limit applies.',
   transcribing: 'Transcribing…',
   polishing: 'Polishing…',
   voiceFailed: 'Voice input failed',
@@ -214,10 +254,21 @@ export const en: BetterInputStrings = {
   loading: 'Loading…',
   saveFailed: 'Failed to save, please retry',
   languageLabel: 'Recognition language',
-  languageHint: 'Empty follows the browser language.',
-  languagePlaceholder: 'e.g. zh-CN or en-US',
+  languageHint: 'Provided by the dsh local recognizer (SenseVoice). Automatic lets the model decide.',
+  languageAuto: 'Automatic',
+  languageCantonese: 'Cantonese',
+  speechStatusLabel: 'Local recognizer',
+  speechStatusReady: 'Ready',
+  speechStatusUnavailable: 'Unavailable',
+  speechStatusPreparing: 'Preparing',
+  speechPrepareButton: 'Download and prepare',
+  speechPrepareBusy: 'Preparing…',
   recordingLimitLabel: 'Recording limit (seconds)',
-  recordingLimitHint: '1–600 seconds.',
+  recordingLimitHint: '1–120 seconds. The ceiling comes from the dsh local recognition service (16 kHz mono).',
+  streamingPreviewLabel: 'Stream text while recording (segmented preview)',
+  streamingPreviewHint: 'Transcribes in segments and streams them into the draft as you speak; after you stop, the whole recording is transcribed once more as the final transcript, then polished. Off transcribes only once, after stopping.',
+  segmentSecondsLabel: 'Segment length (seconds)',
+  segmentSecondsHint: '1–10 seconds, 3 by default. Segments are cut at pauses when possible; shorter shows text sooner but splits words more often.',
   polishLabel: 'AI polishing',
   polishHint: 'Clean the transcript with an LLM after recognition (fillers, homophone fixes, punctuation).',
   on: 'On',

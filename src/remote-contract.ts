@@ -8,6 +8,8 @@ export const booleanSchema = z.boolean().optional()
 export const betterInputSettingsSchema = z.object({
   language: z.string(),
   maxRecordingSeconds: z.number(),
+  streamingPreview: z.boolean(),
+  segmentSeconds: z.number(),
   polishingEnabled: z.boolean(),
   polishProvider: z.string(),
   polishModel: z.string(),
@@ -24,6 +26,8 @@ export const betterInputSettingsSchema = z.object({
 export const betterInputSettingsPatchSchema = z.object({
   language: z.string().optional(),
   maxRecordingSeconds: z.number().optional(),
+  streamingPreview: z.boolean().optional(),
+  segmentSeconds: z.number().optional(),
   polishingEnabled: z.boolean().optional(),
   polishProvider: z.string().optional(),
   polishModel: z.string().optional(),
@@ -111,6 +115,46 @@ export const aboutInfoSchema = z.object({
   updateCommandNpx: z.string()
 })
 
+/**
+ * Speech schemas.
+ *
+ * `transcribeSpeech` carries one complete recording as base64. The Host
+ * validates size and the canonical WAV header itself (`src/speech/wave.ts`)
+ * before the bytes reach dsh's speech service.
+ */
+export const transcribeSpeechRequestSchema = z.object({
+  audioBase64: z.string(),
+  language: z.string()
+})
+
+export const speechTranscriptSchema = z.object({
+  text: z.string(),
+  audioSeconds: z.number(),
+  inferenceSeconds: z.number()
+})
+
+export const speechProviderStatusSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  location: z.string(),
+  languages: z.array(z.string()),
+  preparation: z.string(),
+  detail: z.string()
+})
+
+export const speechStatusSchema = z.object({
+  service: z.boolean(),
+  available: z.boolean(),
+  providers: z.array(speechProviderStatusSchema),
+  selection: z.object({ providerId: z.string(), language: z.string() }).nullable(),
+  maxRecordingSeconds: z.number(),
+  detail: z.string()
+})
+
+export const speechPrepareRequestSchema = z.object({
+  providerId: z.string()
+})
+
 export const updateCheckResultSchema = z.object({
   status: z.enum(['up-to-date', 'update-available', 'unpublished', 'error']),
   installed: z.string(),
@@ -130,4 +174,7 @@ export type BetterInputSettingsViewWire = z.infer<typeof betterInputSettingsView
 export type PolishRouteWire = z.infer<typeof polishRouteSchema>
 export type ReasoningEffortWire = z.infer<typeof reasoningEffortSchema>
 export type ResolveModelEffortsResultWire = z.infer<typeof resolveModelEffortsResultSchema>
-export type { BetterInputSettings, BetterInputSettingsPatch, BetterInputSettingsView, PolishRoute, ReasoningEffortInfo } from './config.js'
+export type SpeechTranscriptWire = z.infer<typeof speechTranscriptSchema>
+export type SpeechStatusWire = z.infer<typeof speechStatusSchema>
+export type SpeechProviderStatusWire = z.infer<typeof speechProviderStatusSchema>
+export type { BetterInputSettings, BetterInputSettingsPatch, BetterInputSettingsView, PolishRoute, ReasoningEffortInfo, SpeechProviderStatus, SpeechStatusView, SpeechTranscriptView } from './config.js'

@@ -19,11 +19,7 @@ import { createTemplatesSource } from './templates-source.js'
 import { TemplatesController } from './templates-controller.js'
 import { TemplatesSection } from './templates-section.jsx'
 import { VoiceInputSession } from './voice-session.js'
-
-const PULSE_KEYFRAMES = `@keyframes sqs-dsh-better-input-pulse {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.3; }
-}`
+import { PLUGIN_CSS } from './styles.js'
 
 /**
  * Required Client services: the slot registry, the Typert remote hub, and
@@ -70,11 +66,11 @@ export async function apply(ctx: ClientContext): Promise<() => Promise<void>> {
       templatesController.dispose()
     }, 'sqs-dsh-better-input sessions lifecycle')
 
-    // Inject the keyframes used by the recognition bar pulse.
+    // Inject the plugin stylesheet (recognition bar layout, pulse and spinner).
     remoteCtx.effect(() => {
       const styleTag = document.createElement('style')
       styleTag.dataset.plugin = 'sqs-dsh-better-input'
-      styleTag.textContent = PULSE_KEYFRAMES
+      styleTag.textContent = PLUGIN_CSS
       document.head.appendChild(styleTag)
       return () => {
         styleTag.remove()

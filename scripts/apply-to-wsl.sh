@@ -54,6 +54,41 @@ if ! grep -q 'model: {' "$SRC/lib/typert.js"; then
 fi
 log "源产物自检通过（含 TYPERT.model 块）"
 
+# 0.5 安装形态分叉（2026-09-30，dsh 0.2.0-rc.2 起）
+#   dsh plugin add <目录> 现在记录 `link:` 依赖，profile 里的
+#   node_modules/sqs-dsh-better-input 是**指向本仓库的符号链接**。
+#   此时 SRC 与 DEST 是同一个目录，下面的 `rm -rf "$DEST/lib"` 会删掉
+#   仓库自己的 lib/，随后 `cp -a "$SRC/lib" ...` 因为源已消失而失败——
+#   既是空操作又具有破坏性。必须识别并短路：读的就是仓库本身，
+#   重新 build 即可，只差一次重启。
+if [ -L "$DEST" ]; then
+  LINK_TARGET=$(readlink -f "$DEST" 2>/dev/null || true)
+  if [ "$LINK_TARGET" != "$(cd "$SRC" && pwd)" ]; then
+    die "安装副本是指向 $LINK_TARGET 的符号链接，不是本仓库 $SRC；请人工确认后再执行"
+  fi
+  log "安装形态 = link（$DEST -> $LINK_TARGET）：profile 直接读本仓库产物，无需同步"
+  if [ "$DRY" = 1 ]; then
+    log "DRY-RUN：无需同步，只差重启 $OPS restart"
+    exit 0
+  fi
+  if [ "$RESTART" = 1 ]; then
+    [ -x "$OPS" ] || die "找不到运维入口：$OPS"
+    LOG_OFFSET=0
+    [ -f "$WEB_LOG" ] && LOG_OFFSET=$(stat -c%s "$WEB_LOG")
+    log "重启 dsh web：$OPS restart"
+    "$OPS" restart || true
+    sleep 3
+    log "--- 重启后新增日志（typert/skip 相关）---"
+    [ -f "$WEB_LOG" ] && tail -c "+$((LOG_OFFSET + 1))" "$WEB_LOG" \
+      | grep -i -E 'typert|did not activate|skipping profile bundle' || echo '(无 typert 报错)'
+    log "URL=$(cat /root/.dsh-current-url 2>/dev/null)"
+  else
+    log "已跳过重启（--no-restart）；产物变更需重启 dsh web 才生效"
+  fi
+  log "完成。"
+  exit 0
+fi
+
 if [ "$DRY" = 1 ]; then
   log "DRY-RUN：将把 $SRC/{lib,package.json,cordis.patch.yml,assets,README.md,LICENSE} 同步到 $DEST"
   log "DRY-RUN：将重启 $OPS restart"
