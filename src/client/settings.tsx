@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { MAX_AUTO_STOP_SECONDS, MAX_SEGMENT_SECONDS, MIN_AUTO_STOP_SECONDS, MIN_SEGMENT_SECONDS, SPEECH_LANGUAGE_HINTS, SPEECH_MAX_RECORDING_SECONDS, type BetterInputSettings, type BetterInputSettingsPatch, type ReasoningEffortInfo } from '../config.js'
+import { MAX_AUTO_STOP_SECONDS, MAX_SEGMENT_SECONDS, MIN_AUTO_STOP_SECONDS, MIN_SEGMENT_SECONDS, SPEECH_LANGUAGE_HINTS, SPEECH_MAX_RECORDING_SECONDS, type BetterInputSettings, type BetterInputSettingsPatch, type ComposerModelRoute, type ReasoningEffortInfo } from '../config.js'
 import type { TranslateNS } from '@deepseek-ai/dsh-client-ui-slots'
-import type { SettingsController, UpdateSnapshot } from './settings-controller.js'
-import { useAboutSnapshot, useEffortsSnapshot, useSettingsSnapshot, useRoutesSnapshot, useSpeechSnapshot, useUpdateSnapshot } from './settings-controller.js'
+import type { AssistRouteSnapshot, SettingsController, UpdateSnapshot } from './settings-controller.js'
+import { useAboutSnapshot, useAssistRoutesSnapshot, useEffortsSnapshot, useSettingsSnapshot, useRoutesSnapshot, useSpeechSnapshot, useUpdateSnapshot } from './settings-controller.js'
 import type { ComposerModelSource } from './composer-model.js'
 
 /** The framework-injected `t` seat for the BetterInput namespace. */
@@ -83,6 +83,56 @@ function ReasoningEffortSelect(props: {
   )
 }
 
+/**
+ * One "follow the composer model" row.
+ *
+ * The value shown is what the assist will **actually** call, resolved through
+ * the same function its button uses (`src/client/assist-route.ts` → the Host's
+ * `betterInput/resolveAssistRoute`, with the browser snapshot as the fallback).
+ * That is the whole point of the row: a follow row that renders the composer's
+ * model from the browser's own snapshot can confidently confirm a follow the
+ * Host then resolves differently, which is worse than showing nothing. So the
+ * badge reports the `source` the resolver returned:
+ *
+ *   - `composer` — the follow works.
+ *   - `settings` — it does not: the selection was unreadable and the configured
+ *     route is what runs. The row says so instead of claiming success.
+ *
+ * The snapshot drives the *first* paint (it is the model the input box shows);
+ * the badge only claims "following" once the Host has confirmed it.
+ */
+function FollowModelRow(props: {
+  snapshot: AssistRouteSnapshot | undefined
+  composerModel: ComposerModelRoute | null
+  t: Translate
+}) {
+  const { snapshot, composerModel, t } = props
+  const resolved = snapshot?.status === 'ready' ? snapshot.route : null
+  const route = resolved ?? composerModel
+  const badge = snapshot === undefined || snapshot.status !== 'ready'
+    ? t('followModelResolving')
+    : snapshot.route === null
+      ? ''
+      : snapshot.source === 'composer' ? t('followModelBadge') : t('followModelFallbackBadge')
+  if (route === null) {
+    return (
+      <div style={followRowStyle}>
+        <span style={followValueStyle}>{t('followModelUnknown')}</span>
+      </div>
+    )
+  }
+  return (
+    <div style={followRowStyle}>
+      <span style={followValueStyle}>{`${route.provider} / ${route.model}`}</span>
+      {badge === '' ? null : (
+        <span style={snapshot?.status === 'ready' && snapshot.source === 'settings' ? followFallbackBadgeStyle : followBadgeStyle}>
+          {badge}
+        </span>
+      )}
+    </div>
+  )
+}
+
 export type SettingsSectionProps = {
   readonly close: () => void
   readonly t: Translate
@@ -111,6 +161,11 @@ export function BetterInputSettingsSection({ close, settingsController, composer
   // it is `null` and the rows fall back to the configured route.
   const composerFace = useMemo(() => composerModels.activeFace(), [composerModels])
   const composerModel = composerFace.useCurrent()
+  // What each assist will actually call, resolved by the Host through the same
+  // path its button takes. Session-less page: the face names whichever Session
+  // the composer is showing.
+  const assistRoutes = useAssistRoutesSnapshot(settingsController)
+  const composerSessionId = composerFace.readSessionId()
   const [drafts, setDrafts] = useState<Record<string, string>>({})
   const [saveFailed, setSaveFailed] = useState(false)
   const [showDefaultPrompt, setShowDefaultPrompt] = useState(false)
@@ -124,6 +179,22 @@ export function BetterInputSettingsSection({ close, settingsController, composer
     void settingsController.refreshAbout()
     void settingsController.refreshSpeechStatus()
   }, [settingsController])
+
+  // Re-ask the Host which route each following assist will call, whenever an
+  // input to that answer changes: the composer's model, the Session, or the
+  // settings document (a save can re-point the fallback route). Only while the
+  // feature actually follows — with the follow off the row renders the select
+  // and there is nothing to resolve.
+  useEffect(() => {
+    if (settings.status !== 'ready') return
+    const live = settings.view.settings
+    if (live.polishingEnabled && live.polishFollowInputModel) {
+      void settingsController.refreshAssistRoute('polish', composerSessionId, composerModel)
+    }
+    if (live.optimizeFollowInputModel) {
+      void settingsController.refreshAssistRoute('optimize', composerSessionId, composerModel)
+    }
+  }, [settingsController, settings, composerSessionId, composerModel])
 
   // While dsh prepares a recognizer (first-use model download), poll so the
   // page shows real progress; preparation is Host-owned and outlives a reload.
@@ -329,17 +400,10 @@ export function BetterInputSettingsSection({ close, settingsController, composer
 
           <Field label={t('polishModelLabel')} hint={t('polishModelHint')}>
             {s.polishFollowInputModel ? (
-              // Following the input box: show the model the composer is actually
-              // on, instead of the stored fallback. At a glance the user can
-              // confirm switching the composer model took effect here too.
-              <div style={followRowStyle}>
-                <span style={followValueStyle}>
-                  {composerModel === null
-                    ? t('followModelUnknown')
-                    : `${composerModel.provider} / ${composerModel.model}`}
-                </span>
-                <span style={followBadgeStyle}>{t('followModelBadge')}</span>
-              </div>
+              // Following the input box: show the route the Host resolved for
+              // this Session (the badge is honest about whether the follow
+              // actually held) — see FollowModelRow.
+              <FollowModelRow snapshot={assistRoutes.polish} composerModel={composerModel} t={t} />
             ) : (
               <select
                 value={drafts.polishProvider !== undefined || drafts.polishModel !== undefined
@@ -444,14 +508,8 @@ export function BetterInputSettingsSection({ close, settingsController, composer
 
       <Field label={t('optimizeModelLabel')} hint={t('optimizeModelHint')}>
             {s.optimizeFollowInputModel ? (
-              <div style={followRowStyle}>
-                <span style={followValueStyle}>
-                  {composerModel === null
-                    ? t('followModelUnknown')
-                    : `${composerModel.provider} / ${composerModel.model}`}
-                </span>
-                <span style={followBadgeStyle}>{t('followModelBadge')}</span>
-              </div>
+              // See the polish row above — same resolver, same honesty rule.
+              <FollowModelRow snapshot={assistRoutes.optimize} composerModel={composerModel} t={t} />
             ) : (
               <select
                 value={drafts.optimizeProvider !== undefined || drafts.optimizeModel !== undefined
@@ -723,6 +781,20 @@ const followBadgeStyle: React.CSSProperties = {
   border: '1px solid var(--dsw-alias-border-l2, rgba(128,128,128,0.4))',
   fontSize: 11,
   opacity: 0.8
+}
+
+/**
+ * The badge for "follow is on, but this is the configured route".
+ *
+ * Visually distinct from the plain follow badge on purpose: it is the one state
+ * a user must not misread as "the follow worked" — the assist will run on the
+ * settings route below, not on the model the input box shows.
+ */
+const followFallbackBadgeStyle: React.CSSProperties = {
+  ...followBadgeStyle,
+  border: '1px solid var(--dsw-alias-state-warning-primary, #b8860b)',
+  color: 'var(--dsw-alias-state-warning-primary, #b8860b)',
+  opacity: 1
 }
 
 const errorStyle: React.CSSProperties = {

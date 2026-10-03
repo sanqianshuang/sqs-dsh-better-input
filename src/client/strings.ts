@@ -53,6 +53,10 @@ export type BetterInputStrings = {
   polishModelNone: string
   /** Shown in place of the model row while the feature follows the composer. */
   followModelBadge: string
+  /** Shown when follow is on but the Host resolved the configured route anyway. */
+  followModelFallbackBadge: string
+  /** Shown while the Host-resolved route is still unknown. */
+  followModelResolving: string
   /** Shown when the composer's selection cannot be read (optional service absent). */
   followModelUnknown: string
   polishEffortLabel: string
@@ -175,6 +179,8 @@ export const zh: BetterInputStrings = {
   polishModelHint: '「跟随输入框所选模型」关闭时使用的模型路由。',
   polishModelNone: '（未选择）',
   followModelBadge: '自动跟随',
+  followModelFallbackBadge: '未跟随，用下方配置',
+  followModelResolving: '读取中…',
   followModelUnknown: '未读取到输入框模型（跟随不可用时回退到下方配置）',
   polishEffortLabel: '润色思考强度',
   polishEffortHint: '控制润色的推理深度，与输入框的思考强度无关（提高它会增加费用）。「默认」即关闭思考，适合大多数场景。',
@@ -296,6 +302,8 @@ export const en: BetterInputStrings = {
   polishModelHint: 'Model route used when "follow the composer model" is off.',
   polishModelNone: '(none)',
   followModelBadge: 'Following the input box',
+  followModelFallbackBadge: 'Not following — using the route below',
+  followModelResolving: 'Resolving…',
   followModelUnknown: 'Composer model unavailable — falling back to the route below',
   polishEffortLabel: 'Polishing thinking effort',
   polishEffortHint: 'Controls how deeply polishing thinks, independent of the input box effort (raising it costs more). Default means thinking off, which suits most cases.',

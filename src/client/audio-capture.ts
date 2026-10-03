@@ -82,30 +82,37 @@ export class MicrophoneCapture {
 
     const Constructor = audioContextConstructor()
     if (Constructor === undefined) {
-      stopTracks(stream)
-      throw new CaptureError('unavailable', 'Web Audio is not available in this browser')
+      throw this.releaseDevice(stream, 'Web Audio is not available in this browser')
     }
-    let context: AudioContext
-    try {
-      // Asking the graph for 16 kHz makes the browser resample the device
-      // stream for us on the common browsers; the fallback resamples later.
-      context = new Constructor({ sampleRate: SPEECH_SAMPLE_RATE })
-    } catch {
-      context = new Constructor()
+    const context = createAudioContext(Constructor)
+    if (context === undefined) {
+      // Both attempts to build the graph failed. The device has already been
+      // acquired at this point, and the caller only reports the failure — it
+      // never receives a capture to dispose — so the tracks must be stopped
+      // here or the browser's recording indicator stays on for the life of the
+      // page (this is the same leak as an un-released `MediaStream`).
+      throw this.releaseDevice(stream, 'Web Audio could not be started in this browser')
     }
     this.context = context
     this.captureRate = context.sampleRate > 0 ? context.sampleRate : SPEECH_SAMPLE_RATE
 
-    this.source = context.createMediaStreamSource(stream)
-    this.processor = context.createScriptProcessor(4096, 1, 1)
-    this.processor.onaudioprocess = (event) => this.collect(event)
-    // A ScriptProcessorNode is only pulled while it reaches the destination;
-    // a zero-gain sink keeps that alive without echoing into the speakers.
-    this.sink = context.createGain()
-    this.sink.gain.value = 0
-    this.source.connect(this.processor)
-    this.processor.connect(this.sink)
-    this.sink.connect(context.destination)
+    try {
+      this.source = context.createMediaStreamSource(stream)
+      this.processor = context.createScriptProcessor(4096, 1, 1)
+      this.processor.onaudioprocess = (event) => this.collect(event)
+      // A ScriptProcessorNode is only pulled while it reaches the destination;
+      // a zero-gain sink keeps that alive without echoing into the speakers.
+      this.sink = context.createGain()
+      this.sink.gain.value = 0
+      this.source.connect(this.processor)
+      this.processor.connect(this.sink)
+      this.sink.connect(context.destination)
+    } catch (error) {
+      // A node can be refused (context limit, unsupported graph). Same rule as
+      // above: never leave the microphone open behind a thrown error.
+      await this.release()
+      throw new CaptureError('unavailable', error instanceof Error ? error.message : undefined)
+    }
 
     if (context.state === 'suspended') {
       try {
@@ -115,6 +122,22 @@ export class MicrophoneCapture {
         // empty and the caller reports it as such.
       }
     }
+  }
+
+  /**
+   * Hand the device back and build the failure the caller reports.
+   *
+   * Used by every failure between acquiring the stream and returning a working
+   * capture. The caller of `start()` only reports the thrown error — it never
+   * receives a capture to `dispose()` — so without this the `MediaStream` stays
+   * live and the browser keeps showing that the microphone is recording. The
+   * stream is also cleared so a later `release()`/`dispose()` cannot act on a
+   * stream that was never published.
+   */
+  private releaseDevice(stream: MediaStream, message: string): CaptureError {
+    this.stream = undefined
+    stopTracks(stream)
+    return new CaptureError('unavailable', message)
   }
 
   /** Seconds captured so far, in capture-rate terms. */
@@ -309,6 +332,32 @@ function stopTracks(stream: MediaStream | undefined): void {
       track.stop()
     } catch {
       // Track already ended.
+    }
+  }
+}
+
+/**
+ * Build the audio graph's context, preferring the requested 16 kHz rate.
+ *
+ * The rate is a hint: browsers that ignore it still resample the device stream
+ * later (see `slice`). Both attempts can throw — an exhausted context budget or
+ * a blocked audio permission is not rare — and the second failure is what used
+ * to escape `start()` with the microphone still open.
+ *
+ * @returns the context, or `undefined` when neither attempt succeeded.
+ *
+ * Exported for `check:routes`, which drives the failing branches with stub
+ * constructors — the same reason `toCaptureError` is exported. Nothing else in
+ * the build can reach them.
+ */
+export function createAudioContext(Constructor: AudioContextConstructor): AudioContext | undefined {
+  try {
+    return new Constructor({ sampleRate: SPEECH_SAMPLE_RATE })
+  } catch {
+    try {
+      return new Constructor()
+    } catch {
+      return undefined
     }
   }
 }

@@ -1,6 +1,6 @@
 {
   "name": "sqs-dsh-better-input",
-  "version": "0.2.0-rc.2-sqs.1",
+  "version": "0.2.0-rc.2-sqs.4",
   "description": "Better input experience for DeepSeek Harness: voice input with AI polishing, prompt optimization, and a local prompt template library",
   "license": "MIT",
   "author": "sanqianshuang",

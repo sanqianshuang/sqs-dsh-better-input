@@ -5,18 +5,31 @@ export const textSchema = z.string()
 
 export const booleanSchema = z.boolean().optional()
 
+/**
+ * The settings document, as it crosses the wire.
+ *
+ * **Every** key of `BetterInputSettings` must appear here, and every key must
+ * also be patchable below. The gateway runs these schemas over incoming
+ * arguments (`decode()` → `codec.create().parse(value)`) and passes the *parsed
+ * result* to the service, and a zod object **strips** undeclared keys — so a
+ * setting missing from `betterInputSettingsPatchSchema` is silently dropped on
+ * its way into `updateSettings`. The RPC still answers `ok`, the local draft is
+ * cleared as if it saved, and the value reverts on the next read. That is
+ * exactly how `autoStopSeconds` was lost (fixed in `0.2.0-rc.2-sqs.4`). Guard:
+ * `npm run check:routes` (§1) compares all three lists.
+ */
 export const betterInputSettingsSchema = z.object({
   language: z.string(),
   maxRecordingSeconds: z.number(),
   streamingPreview: z.boolean(),
   segmentSeconds: z.number(),
+  autoStopSeconds: z.number(),
   polishingEnabled: z.boolean(),
   polishFollowInputModel: z.boolean(),
   polishProvider: z.string(),
   polishModel: z.string(),
   polishReasoningEffort: z.string(),
   polishPrompt: z.string(),
-  optimizeEnabled: z.boolean(),
   optimizeFollowInputModel: z.boolean(),
   optimizeProvider: z.string(),
   optimizeModel: z.string(),
@@ -30,13 +43,13 @@ export const betterInputSettingsPatchSchema = z.object({
   maxRecordingSeconds: z.number().optional(),
   streamingPreview: z.boolean().optional(),
   segmentSeconds: z.number().optional(),
+  autoStopSeconds: z.number().optional(),
   polishingEnabled: z.boolean().optional(),
   polishFollowInputModel: z.boolean().optional(),
   polishProvider: z.string().optional(),
   polishModel: z.string().optional(),
   polishReasoningEffort: z.string().optional(),
   polishPrompt: z.string().optional(),
-  optimizeEnabled: z.boolean().optional(),
   optimizeFollowInputModel: z.boolean().optional(),
   optimizeProvider: z.string().optional(),
   optimizeModel: z.string().optional(),
@@ -50,6 +63,7 @@ export const betterInputSettingsViewSchema = z.object({
   writable: z.boolean(),
   settings: betterInputSettingsSchema,
   overridden: z.array(z.string()),
+  defaultRoute: z.object({ provider: z.string(), model: z.string() }).nullable(),
   defaultPolishPrompt: z.string(),
   defaultOptimizePrompt: z.string()
 })
@@ -63,6 +77,31 @@ export const reasoningEffortSchema = z.object({
 export const resolveModelEffortsResultSchema = z.object({
   efforts: z.array(reasoningEffortSchema),
   defaultEffort: z.string().optional()
+})
+
+/**
+ * The route an assist will actually call, resolved on the **Host**.
+ *
+ * `source` records which input won, so the browser can render an honest follow
+ * row and a failure can be attributed instead of guessed at:
+ *
+ *   - `composer` — the Session's live model selection.
+ *   - `settings` — the route configured for the feature (follow is off, or the
+ *     composer's selection is genuinely unavailable).
+ *   - `none`     — neither side named a usable route.
+ *
+ * The Host answers this because it owns both inputs: the settings document it
+ * reads itself, and the Session's selection, which reaches it through the
+ * session controller. The browser's own copy of the composer selection is a
+ * render-time snapshot (see `src/client/composer-model.ts`) and must never be
+ * the last word on which model a request is billed to.
+ */
+export const assistRouteViewSchema = z.object({
+  provider: z.string(),
+  model: z.string(),
+  /** Thinking tier for the assist; `''` means the plugin's "thinking off" default. */
+  reasoningEffort: z.string(),
+  source: z.enum(['composer', 'settings', 'none'])
 })
 
 export const polishRouteSchema = z.object({
@@ -178,6 +217,7 @@ export type BetterInputSettingsViewWire = z.infer<typeof betterInputSettingsView
 export type PolishRouteWire = z.infer<typeof polishRouteSchema>
 export type ReasoningEffortWire = z.infer<typeof reasoningEffortSchema>
 export type ResolveModelEffortsResultWire = z.infer<typeof resolveModelEffortsResultSchema>
+export type AssistRouteView = z.infer<typeof assistRouteViewSchema>
 export type SpeechTranscriptWire = z.infer<typeof speechTranscriptSchema>
 export type SpeechStatusWire = z.infer<typeof speechStatusSchema>
 export type SpeechProviderStatusWire = z.infer<typeof speechProviderStatusSchema>

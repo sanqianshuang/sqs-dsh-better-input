@@ -1,10 +1,11 @@
 /**
  * Host-side JSON file storage for prompt templates.
  *
- * Location: `~/.dsh/sqs-dsh-better-input/templates.json`. The plugin ships as a flat
- * bundle under node_modules, so anything stored next to the package would be
- * wiped on update — the only durable, dependency-free location is the user's
- * home directory (Node builtins only).
+ * Location: `$DSH_HOME/sqs-dsh-better-input/templates.json` — dsh's own home
+ * (see `src/home.ts`), which is `~/.dsh` unless the launcher overrides it. The
+ * plugin ships as a flat bundle under node_modules, so anything stored next to
+ * the package would be wiped on update — the only durable, dependency-free
+ * location is dsh's home directory (Node builtins only).
  *
  * Writes are serialized through a promise chain and performed atomically
  * (temp file + rename). A corrupt file is quarantined aside once with a
@@ -23,5 +24,10 @@ export declare class TemplateStore {
     private load;
     private quarantineCorruptFile;
     private persist;
+    /**
+     * Write via temp file + rename (atomic publish, no stray staging file on
+     * failure) — see `src/atomic-write.ts`, which owns the rule for both of this
+     * plugin's documents.
+     */
     private writeAtomic;
 }

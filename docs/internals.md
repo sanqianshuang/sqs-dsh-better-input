@@ -232,6 +232,128 @@ afterwards. Hook `console.error` via `Page.addScriptToEvaluateOnNewDocument` and
 
 ---
 
+## The two assist calls, forensics
+
+Both bugs below were reported together as "prompt optimization is broken on a non-official
+provider, and the plugin is stuck on the official key". They are independent, and both are
+silent: the plugin compiles, activates and renders exactly as before.
+
+### An assist request without `sessionId` is an anonymous request
+
+dsh dispatches **every** model request through `ctx.waterfall(this, 'llm/stream', options, …)`
+(`dsh-llm/lib/index.js`, `streamWithRegistration`). A provider that needs per-session
+transport metadata reads it from `options.sessionId`. OpenCode is the case in hand, and its
+support is **native — no plugin is involved**:
+
+- pi-ai ships the providers `opencode` and `opencode-go`
+  (`@earendil-works/pi-ai/dist/providers/opencode.js`, `opencode-go.js`), and both wrap every
+  API surface they declare in `withOpenCodeSessionHeader()`.
+- That wrapper (`providers/opencode-headers.js`) is the whole mechanism: if
+  `options.sessionId` is truthy and no `x-opencode-session` header was already set, it adds
+  one. Note the guard is `!options?.sessionId`, so an **empty string is skipped too**.
+- `@deepseek-ai/dsh-llm-pi-ai` imports the catalog through
+  `@earendil-works/pi-ai/providers/all`, reuses the catalog provider for any route it ships
+  whose protocol the profile does not override, and forwards the field:
+  `...options.sessionId === void 0 ? {} : { sessionId: String(options.sessionId) }` into
+  `streamSimple`.
+
+So the caller's only obligation is to supply the id; OpenCode's relay answers
+
+```
+400 {"type":"MissingSessionID","message":"Request is missing x-opencode-session …"}
+```
+
+when the resulting header is absent. dsh's own auxiliary callers stamp the field
+(`dsh-session-title-llm`: `sessionId: request.session.id`; `dsh-compaction-basic`:
+`agent.session.id`); this plugin's `polish` / `optimize` did **not**. The consequence is not
+"some providers are picky": an assist became a request nobody could attribute, which the
+first-party DeepSeek route happens to accept and every relay route rejects — so switching the
+composer to the user's own route broke optimization while the official route kept working, and
+the settings page looked "pinned to the official key" because that was the only route that
+answered.
+
+The fix threads the slot's `sessionId` through the RPC (`polish` / `optimize` gained the
+parameter in all four Typert places) into `assistStreamOptions()`, which omits the field for
+an empty id rather than sending a blank header.
+
+**The narrow hole that remains** is a *hand-declared* route: `dsh-llm-pi-ai`'s own
+`PROTOCOLS` table builds such a provider over the bare `openAICompletionsApi` /
+`anthropicMessagesApi` / `openAIResponsesApi` factories, with no OpenCode wrapper — the
+wrapper lives only on the catalog providers. A route declared by hand that points at
+OpenCode's endpoint therefore misses the header even when `sessionId` is set. Nothing here
+depends on that shape: the profile in play configures the catalog route `opencode-go` by name
+(`llm-pi-ai.providers.opencode-go.apiKeyEnv`), which takes the native path.
+
+Verified directly against pi-ai's built-in provider with **no plugin in the path**, by
+hijacking `globalThis.fetch` and reading the real outgoing headers (recipe below). Same
+credential, same endpoint:
+
+| `options.sessionId` | outgoing `x-opencode-session` | result |
+|---|---|---|
+| `'probe-native-session-abc'` | `probe-native-session-abc` | **HTTP 200** |
+| omitted | (absent) | HTTP 400 `MissingSessionID` |
+| `''` (empty string) | (absent) | HTTP 400 `MissingSessionID` |
+
+`npm run check:routes` asserts the stamping and that both completers really build their
+request through `assistStreamOptions()` — the module existing is not the property worth
+testing.
+
+### The terminal failure was thrown away
+
+dsh does **not** throw provider errors out of the stream. It normalizes them into the
+terminal `finish` chunk's `failure` (`{ message, code, status, … }`,
+`dsh-llm/lib/types/adapter-failure.js`), and `LlmRuntime.stream()` guarantees the consumer
+sees that chunk instead of an exception. `collectText()` used to test only
+`reason.kind === 'error' | 'aborted'` and raise a fixed sentence, so a 400
+`MissingSessionID`, a `MISSING_CREDENTIAL`, and a genuinely unregistered route were
+indistinguishable — the single most expensive part of diagnosing this bug. It now forwards
+`failure.message` verbatim (with `(HTTP <status>)` appended when the adapter reported one)
+and carries `failure.code` on `LlmError.code`.
+
+### The plugin's own documents ignored `$DSH_HOME`
+
+`settings/store.ts` and `templates/store.ts` built their paths from `os.homedir()`. dsh
+resolves its home as *explicit config > `$DSH_HOME` > `~/.dsh`*
+(`dsh-home-paths#resolveDshHome`), and every credential, session and setting it owns lives
+under that root. On a machine launched with an explicit home, the plugin therefore read and
+wrote `~/.dsh/sqs-dsh-better-input/settings.json` while dsh was reading its credentials from
+somewhere else — the settings page showed a route the running dsh had never seen, and edits
+appeared not to stick. `src/home.ts` mirrors dsh's rule (deliberately without importing
+`dsh-home-paths`: a new peer is a new demotion risk, and the rule is six lines). The
+highest-precedence *configured* home is not reachable from a plugin; `$DSH_HOME` covers every
+launch that does not pass one through app-boot options.
+
+`npm run check:routes` drives `dshHomeDir()` with explicit env maps: `$DSH_HOME` wins, a blank
+value is unset, and a `~/` prefix expands.
+
+### First-launch auto-fill pinned the official provider
+
+The settings page filled its empty fallback route from `listRoutes()[0]`. That looks like
+"the user's primary configured model" only if the list is preference-ordered; it is not.
+`ctx.llm.listProviders()` returns **registration order**, and `dsh-base` activates
+`llm-deepseek-api-key` before pi-ai's configured providers:
+
+```
+ORDER-PROBE providers=["deepseek-official","deepseek-account","opencode-go"] first=deepseek-official
+```
+
+So a stock composition stored `deepseek-official` as BetterInput's fallback on first launch —
+even for a user whose own route was a relay. It is invisible in the common case (both model
+rows render the *composer's* model while they follow it), and surfaces exactly when the
+composer read fails, which reads as "the plugin is pinned to the official key and I cannot
+change it". The durable source is dsh's own agent default model
+(`ctx.agentDefaultModel.currentSelection()`, an optional service read through `ctx.get()`),
+now shipped to the browser as `BetterInputSettingsView.defaultRoute` and consumed by
+`resolveAutoRoute()`, which validates the selection against the live route list before storing
+it and falls back to `routes[0]` only when the service is absent. Verified in the same probe:
+
+```
+CALL-PROBE defaultRoute={"provider":"opencode-go","model":"deepseek-v4.1-flash"} polishProvider=""
+CALL-PROBE routes0=deepseek-official/deepseek-flash count=32
+```
+
+---
+
 ## Operational recipes
 
 ### Retargeting to a new dsh version
@@ -309,6 +431,92 @@ PROBE-SPEECH OK text="" audioSeconds=2 inferenceSeconds=0.0058 wallMs=954
 the real worker decoded our bytes. Budget ~1 s for the first wake-up, then ~0.005 s per
 silent frame; a real utterance costs the VAD plus one SenseVoice pass.
 
+### Reproducing a relay route's session requirement
+
+**Level 1 — provider only, no plugin, no dsh service (this is the decisive one).** The header is
+attached by the provider, so the provider is the only thing that needs to be exercised. Call
+pi-ai's built-in factory directly and read the real outgoing headers by wrapping `fetch`. The
+checkout carries the probe:
+
+```sh
+OPENCODE_GO_API_KEY=... node scripts/probe-opencode-session.mjs
+```
+
+It resolves pi-ai out of the running dsh installation (ESM-only, no `require` condition, so it
+imports the dist file by URL) and drives `opencodeGoProvider().streamSimple()` three times. The
+essence, if you need to re-derive it:
+
+```js
+const seen = []
+const real = globalThis.fetch
+globalThis.fetch = async (url, init = {}) => {
+  const h = new Headers(init.headers ?? {})
+  seen.push({ session: h.get('x-opencode-session') })
+  const res = await real(url, init)
+  seen.at(-1).status = res.status
+  return res
+}
+// ... drain provider.streamSimple(model, context, { apiKey, sessionId: 'probe-abc' })
+```
+
+Observed here:
+
+```
+[sessionId "probe-native-session-abc"] x-opencode-session: probe-native-session-abc -> HTTP 200
+[sessionId omitted]                    x-opencode-session: (ABSENT)                      -> HTTP 400
+[sessionId ""]                         x-opencode-session: (ABSENT)                      -> HTTP 400
+```
+
+**Level 2 — a stock profile, no third-party plugin at all.** The strongest available proof, and
+the shortest to run: build a throwaway profile from a shipped template (which contains no
+OpenCode plugin), point `llm-pi-ai` at the relay route, and let dsh run a real agent turn.
+
+```sh
+export DSH_HOME=/tmp/hl && mkdir -p "$DSH_HOME"
+cp ~/.dsh/.credentials.yaml "$DSH_HOME/.credentials.yaml" && chmod 600 "$DSH_HOME/.credentials.yaml"
+dsh --profile hl --from-default-profile headless --dump-config >/dev/null   # bundles: dsh-base + dsh-headless
+ln -sfn ~/.dsh/profiles/web/node_modules "$DSH_HOME/profiles/hl/node_modules" # only if the packages are not local
+cat > "$DSH_HOME/profiles/hl/cordis.patch.yml" <<'YAML'
+- id: llm-pi-ai
+  name: "@deepseek-ai/dsh-llm-pi-ai"
+  config: { providers: { opencode-go: { apiKeyEnv: OPENCODE_GO_API_KEY } } }
+- id: agent-default-model
+  name: "@deepseek-ai/dsh-agent-default-model"
+  config: { provider: opencode-go, model: deepseek-v4.1-flash, reasoningEffort: high }
+YAML
+dsh --profile hl "Reply with exactly the word: ok"
+```
+
+`chmod 600` and a **native** filesystem are not optional: the credentials service refuses a file
+readable beyond its owner, and `drvfs`/`/mnt/*` paths are permanently `777`, so the chmod is a
+no-op there and credentials-local fails to activate.
+
+Observed here — bundles are exactly `["@deepseek-ai/dsh-base","@deepseek-ai/dsh-headless"]`, so
+`dsh-opencode-session` is not installed, not configured, and not loaded:
+
+```
+dsh: reasoning:
+The user wants exactly "ok". I should reply with exactly that word. No tool calls needed.
+ok
+```
+
+**Conclusion: the third-party `dsh-opencode-session` is redundant.** The equivalent check at the
+dsh layer with a probe plugin (bundles `dsh-base` + a plugin with `export const inject = ['llm']`,
+`apply()` calling `ctx.llm.prepareCall(...)` / `prepared.stream(...)` twice after ~1.5 s) is still
+worth keeping in mind as a cheaper isolated harness, and it reports:
+
+```
+PROBE-LLM [without-sessionId] FAILURE code=INVALID_REQUEST status=- message=400: {"type":"MissingSessionID",…}
+PROBE-LLM [with-sessionId]    OK kind=stop text="OK"
+```
+
+That failure line is why defect ② matters as much as ①: the `400 MissingSessionID` text is only
+visible because the completer forwards the provider's own `failure.message` instead of
+substituting a fixed sentence.
+
+The one shape native support does **not** cover is a hand-declared route — see "The narrow hole
+that remains" above. A user on such a route is the only one who still needs a header plugin.
+
 ### Installing into a local dsh
 
 ```sh
@@ -348,3 +556,60 @@ npm run verify                                         # build + bundle + speech
 Also mind the two ways a `--dump-config` run can lie about this repository: it writes
 `<profile>/cordis.yml`, so it needs a writable `$DSH_HOME`; and a *skipped* bundle is
 reported on stderr while **stdout still composes successfully** with `exit=0`.
+
+---
+
+## Traps that cost us a bug each
+
+### The projection's `next` exists only on the *client view*
+
+dsh's Typert projection carries two different shapes, and they are **not** interchangeable:
+
+- the **state** variant declares only the fields the Host persists;
+- the **view** variant adds the presentation-only fields, `next` among them.
+
+Client code that reads `projection.next` is correct; Host-side code that reads it is reading a
+field that its own schema never declares, so it is `undefined` at runtime with no type error —
+strictness does not help, because the type it is checked against is the broader one. Read the
+field off `snapshot`/`faceOf`, or keep the logic on the client. A guard that only type-checks
+will not catch this; compare the two variant schemas instead.
+
+### A setting the wire schema does not declare is silently dropped
+
+The settings document is decoded through the remote contract's schema before it reaches the
+service. A key that the wire schema does not list is stripped during decode — no throw, no
+warning, the value simply arrives as `undefined` and falls back to its default. This bites
+exactly when a field is added to the store but not to the contract (`autoStopSeconds` did).
+When adding a setting, update **all** of: the store's type, `normalizeSettings`, the Codec
+schema in `remote-contract.ts`, and the UI control. `check:typert` + `check:routes` do not
+span this boundary; the reliable check is a three-way compare (store default / wire parse /
+UI value) plus a boundary parse probe.
+
+### Voice input writes no temporary files
+
+Every recognizer path keeps its audio off the disk:
+
+| path | where the samples live |
+| --- | --- |
+| client capture | memory (AudioWorklet → PCM16 frames) |
+| remote polish / transcribe | JSON payload on the wire |
+| local worker | loopback HTTP body |
+| sherpa / sensevoice | in-process buffers |
+
+The only artifact is the one-time model cache under `$DSH_HOME/speech-to-text/` (~241 MB),
+whose files keep their first-download mtime and are never rewritten. So there is nothing to
+sweep, and no per-recording garbage to accumulate.
+
+Recording is not the only writer, though: the plugin's two JSON documents go out through
+`writeFileAtomic`, and their staging file is the one thing that can outlive a process. A
+`SIGKILL` (or a power loss) between `writeFile` and `rename` strands it — the deterministic
+name keeps that from *accumulating*, but it does leave an unowned file in dsh's home.
+`sweepStaleTemporaries()` runs on each document's first load and removes only
+`<document>.<pid>.tmp` files that belong to another process and are older than ten minutes:
+wide enough to catch the killed-process window, narrow enough that an in-flight write and our
+own staging file are never touched.
+
+One caveat outside this plugin: dsh's own model download can strand a `*.part` file if the
+process is hard-killed mid-download. It is uuid-named, removed in a `finally`, and never
+reused, so at most one can remain per interrupted download — it is not written by this
+plugin's code, and the plugin should not try to reap it.

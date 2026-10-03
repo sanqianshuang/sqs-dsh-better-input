@@ -21,6 +21,12 @@ export type InputZoneLikeProps = {
     readonly useSettings: () => SettingsFace;
     /** The composer's selected model for this Session (see composer-model.ts). */
     readonly composerModel: ComposerModelFace;
+    /**
+     * The Session this button belongs to. Forwarded with the polish call so dsh's
+     * `llm/stream` middleware can attach the per-session transport metadata some
+     * provider routes require (see `src/polish/assist-options.ts`).
+     */
+    readonly sessionId: string;
     readonly t: Translate;
 };
 export type SettingsFace = {
@@ -38,7 +44,7 @@ export type SettingsFace = {
  * when the user stops, one pass over the whole recording produces the
  * authoritative transcript and AI polishing runs on that.
  */
-export declare function MicrophoneButton({ useInput, inputActions, voiceSession, remote, useSettings, composerModel, t }: InputZoneLikeProps): import("react").JSX.Element;
+export declare function MicrophoneButton({ useInput, inputActions, voiceSession, remote, useSettings, composerModel, sessionId, t }: InputZoneLikeProps): import("react").JSX.Element;
 export interface PolishDraftOptions {
     transcript: string;
     baseDraft: string;
@@ -47,6 +53,12 @@ export interface PolishDraftOptions {
     model: string;
     /** Reasoning effort to forward; `''` asks the Host for its default policy. */
     reasoningEffort: string;
+    /**
+     * The Session this polish runs for. Forwarded to the Host so dsh's
+     * `llm/stream` middleware can attach per-session transport metadata (see
+     * `src/polish/assist-options.ts`); `''` when the caller has no Session.
+     */
+    sessionId: string;
     remote: BetterInputRemote;
     setState: (state: 'idle' | 'error' | 'polish-error' | 'polishing', detail?: string) => void;
     latestDraftRef: {

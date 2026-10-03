@@ -1,7 +1,8 @@
 /**
  * Host-side JSON file storage for the plugin's own settings.
  *
- * Location: `~/.dsh/sqs-dsh-better-input/settings.json`.
+ * Location: `$DSH_HOME/sqs-dsh-better-input/settings.json` — dsh's own home
+ * (see `src/home.ts`), which is `~/.dsh` unless the launcher overrides it.
  *
  * dsh 0.1.7 replaced the old per-plugin `settings.register(namespace, schema)`
  * API with a Loader-entry configuration model (`SettingsForms`, addressed by
@@ -15,13 +16,13 @@
  * slot (unchanged in 0.2.0-rc.2, the current target).
  */
 
-import { mkdir, readFile, rename, writeFile } from 'node:fs/promises'
-import { homedir } from 'node:os'
-import { dirname, join } from 'node:path'
+import { readFile, rename } from 'node:fs/promises'
+import { sweepStaleTemporaries, writeFileAtomic } from '../atomic-write.js'
 import { DEFAULT_SETTINGS, isValidAutoStopSeconds, isValidContextTurns, isValidRecordingLimit, isValidSegmentSeconds, normalizeSpeechLanguage, validateSettings, type BetterInputSettings } from '../config.js'
+import { dshHomePath } from '../home.js'
 
 export function defaultSettingsFilePath(): string {
-  return join(homedir(), '.dsh', 'sqs-dsh-better-input', 'settings.json')
+  return dshHomePath('sqs-dsh-better-input', 'settings.json')
 }
 
 function isNodeError(error: unknown): error is NodeJS.ErrnoException {
@@ -72,7 +73,6 @@ export function normalizeSettings(raw: unknown): BetterInputSettings {
     polishModel: text(record.polishModel),
     polishReasoningEffort: text(record.polishReasoningEffort),
     polishPrompt: typeof record.polishPrompt === 'string' ? record.polishPrompt : '',
-    optimizeEnabled: record.optimizeEnabled !== false,
     optimizeFollowInputModel: record.optimizeFollowInputModel !== false,
     optimizeProvider: text(record.optimizeProvider),
     optimizeModel: text(record.optimizeModel),
@@ -93,6 +93,9 @@ export class SettingsStore {
   /** Read the current settings, falling back to defaults when absent/corrupt. */
   async load(): Promise<BetterInputSettings> {
     if (this.cache !== undefined) return this.cache
+    // Reap a staging file stranded by a killed process before the first read, so
+    // dsh's home does not accumulate unowned `.tmp` files across crashes.
+    await sweepStaleTemporaries(this.filePath)
     let raw: string
     try {
       raw = await readFile(this.filePath, 'utf8')
@@ -148,9 +151,6 @@ export class SettingsStore {
 
   /** Write via temp file + rename so a crash never leaves a half-written file. */
   private async writeAtomic(settings: BetterInputSettings): Promise<void> {
-    await mkdir(dirname(this.filePath), { recursive: true })
-    const temporary = `${this.filePath}.${process.pid}.${Date.now()}.tmp`
-    await writeFile(temporary, `${JSON.stringify(settings, null, 2)}\n`, 'utf8')
-    await rename(temporary, this.filePath)
+    await writeFileAtomic(this.filePath, `${JSON.stringify(settings, null, 2)}\n`)
   }
 }

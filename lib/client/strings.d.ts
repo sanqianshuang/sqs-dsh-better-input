@@ -53,6 +53,10 @@ export type BetterInputStrings = {
     polishModelNone: string;
     /** Shown in place of the model row while the feature follows the composer. */
     followModelBadge: string;
+    /** Shown when follow is on but the Host resolved the configured route anyway. */
+    followModelFallbackBadge: string;
+    /** Shown while the Host-resolved route is still unknown. */
+    followModelResolving: string;
     /** Shown when the composer's selection cannot be read (optional service absent). */
     followModelUnknown: string;
     polishEffortLabel: string;

@@ -26,6 +26,7 @@ export declare class CaptureError extends Error {
     readonly kind: CaptureFailureKind;
     constructor(kind: CaptureFailureKind, message?: string);
 }
+type AudioContextConstructor = new (options?: AudioContextOptions) => AudioContext;
 /**
  * One microphone acquisition.
  *
@@ -46,6 +47,17 @@ export declare class MicrophoneCapture {
     private disposed;
     /** Acquire the microphone and start buffering samples. */
     start(): Promise<void>;
+    /**
+     * Hand the device back and build the failure the caller reports.
+     *
+     * Used by every failure between acquiring the stream and returning a working
+     * capture. The caller of `start()` only reports the thrown error — it never
+     * receives a capture to `dispose()` — so without this the `MediaStream` stays
+     * live and the browser keeps showing that the microphone is recording. The
+     * stream is also cleared so a later `release()`/`dispose()` cannot act on a
+     * stream that was never published.
+     */
+    private releaseDevice;
     /** Seconds captured so far, in capture-rate terms. */
     secondsRecorded(): number;
     /** Root-mean-square level of the trailing window, 0 when idle. */
@@ -82,6 +94,21 @@ export declare function audioBase64(bytes: Uint8Array): string;
 /** Linear resampling; adequate for a fallback path off the 16 kHz happy path. */
 export declare function resampleLinear(samples: Float32Array, fromRate: number, toRate: number): Float32Array;
 /**
+ * Build the audio graph's context, preferring the requested 16 kHz rate.
+ *
+ * The rate is a hint: browsers that ignore it still resample the device stream
+ * later (see `slice`). Both attempts can throw — an exhausted context budget or
+ * a blocked audio permission is not rare — and the second failure is what used
+ * to escape `start()` with the microphone still open.
+ *
+ * @returns the context, or `undefined` when neither attempt succeeded.
+ *
+ * Exported for `check:routes`, which drives the failing branches with stub
+ * constructors — the same reason `toCaptureError` is exported. Nothing else in
+ * the build can reach them.
+ */
+export declare function createAudioContext(Constructor: AudioContextConstructor): AudioContext | undefined;
+/**
  * Classify a `getUserMedia` rejection into the kind the UI localizes.
  *
  * Exported for `check:routes`: the mapping is the difference between telling a
@@ -89,3 +116,4 @@ export declare function resampleLinear(samples: Float32Array, fromRate: number, 
  * nothing else in the build can see it.
  */
 export declare function toCaptureError(error: unknown): CaptureError;
+export {};

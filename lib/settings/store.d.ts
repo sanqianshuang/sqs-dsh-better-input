@@ -1,7 +1,8 @@
 /**
  * Host-side JSON file storage for the plugin's own settings.
  *
- * Location: `~/.dsh/sqs-dsh-better-input/settings.json`.
+ * Location: `$DSH_HOME/sqs-dsh-better-input/settings.json` — dsh's own home
+ * (see `src/home.ts`), which is `~/.dsh` unless the launcher overrides it.
  *
  * dsh 0.1.7 replaced the old per-plugin `settings.register(namespace, schema)`
  * API with a Loader-entry configuration model (`SettingsForms`, addressed by

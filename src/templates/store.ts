@@ -1,10 +1,11 @@
 /**
  * Host-side JSON file storage for prompt templates.
  *
- * Location: `~/.dsh/sqs-dsh-better-input/templates.json`. The plugin ships as a flat
- * bundle under node_modules, so anything stored next to the package would be
- * wiped on update — the only durable, dependency-free location is the user's
- * home directory (Node builtins only).
+ * Location: `$DSH_HOME/sqs-dsh-better-input/templates.json` — dsh's own home
+ * (see `src/home.ts`), which is `~/.dsh` unless the launcher overrides it. The
+ * plugin ships as a flat bundle under node_modules, so anything stored next to
+ * the package would be wiped on update — the only durable, dependency-free
+ * location is dsh's home directory (Node builtins only).
  *
  * Writes are serialized through a promise chain and performed atomically
  * (temp file + rename). A corrupt file is quarantined aside once with a
@@ -12,9 +13,7 @@
  */
 
 import { randomUUID } from 'node:crypto'
-import { mkdir, readFile, rename, writeFile } from 'node:fs/promises'
-import { homedir } from 'node:os'
-import { dirname, join } from 'node:path'
+import { readFile, rename } from 'node:fs/promises'
 import {
   MAX_TEMPLATE_COUNT,
   normalizeTags,
@@ -22,9 +21,11 @@ import {
   type BetterInputTemplate,
   type TemplateInput
 } from './model.js'
+import { dshHomePath } from '../home.js'
+import { sweepStaleTemporaries, writeFileAtomic } from '../atomic-write.js'
 
 export function defaultTemplatesFilePath(): string {
-  return join(homedir(), '.dsh', 'sqs-dsh-better-input', 'templates.json')
+  return dshHomePath('sqs-dsh-better-input', 'templates.json')
 }
 
 function isNodeError(error: unknown): error is NodeJS.ErrnoException {
@@ -102,6 +103,9 @@ export class TemplateStore {
     if (this.cache !== undefined) {
       return this.cache
     }
+    // Same reason as the settings store: a process killed mid-write leaves its
+    // staging file behind, and the first read of the process is where it is reaped.
+    await sweepStaleTemporaries(this.filePath)
     let raw: string
     try {
       raw = await readFile(this.filePath, 'utf8')
@@ -142,11 +146,12 @@ export class TemplateStore {
     this.cache = sorted
   }
 
+  /**
+   * Write via temp file + rename (atomic publish, no stray staging file on
+   * failure) — see `src/atomic-write.ts`, which owns the rule for both of this
+   * plugin's documents.
+   */
   private async writeAtomic(templates: readonly BetterInputTemplate[]): Promise<void> {
-    const payload = `${JSON.stringify(templates, null, 2)}\n`
-    const temporaryPath = `${this.filePath}.${process.pid}.tmp`
-    await mkdir(dirname(this.filePath), { recursive: true })
-    await writeFile(temporaryPath, payload, 'utf8')
-    await rename(temporaryPath, this.filePath)
+    await writeFileAtomic(this.filePath, `${JSON.stringify(templates, null, 2)}\n`)
   }
 }

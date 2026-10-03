@@ -1,0 +1,187 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>composer-model fixed face probe</title>
+</head>
+<body>
+<div id="app"></div>
+<pre id="log"></pre>
+<script type="importmap">
+{
+  "imports": {
+    "react": "https://esm.sh/react@18.3.1",
+    "react-dom/client": "https://esm.sh/react-dom@18.3.1/client"
+  }
+}
+</script>
+<script type="module">
+import React, { useSyncExternalStore, useState } from 'react'
+import { createRoot } from 'react-dom/client'
+
+const t0 = performance.now()
+const logLines = []
+const logEl = document.getElementById('log')
+let rafCount = 0
+let lastPaint = t0
+function log(msg) {
+  logLines.push(`${(performance.now() - t0).toFixed(1)}ms  ${msg}`)
+  logEl.textContent = logLines.join('\n')
+  console.log(msg)
+}
+
+function createSnapshotStore(initial) {
+  let snapshot = initial
+  const listeners = new Set()
+  return {
+    getSnapshot: () => snapshot,
+    set(next) { snapshot = next; for (const l of [...listeners]) l() },
+    subscribe(listener) { listeners.add(listener); return () => listeners.delete(listener) }
+  }
+}
+
+class Directory {
+  constructor(sessionId) {
+    this.sessionId = sessionId
+    this.disposed = false
+    this.store = createSnapshotStore({ current: { provider: 'opencode-go', model: 'deepseek-v4.1-flash' }, pending: null })
+  }
+  dispose() { this.disposed = true }
+}
+
+const service = {
+  created: 0,
+  live: new Map(),
+  directoryFor(sessionId) {
+    let dir = this.live.get(sessionId)
+    if (dir) return dir
+    this.created += 1
+    dir = new Directory(sessionId)
+    this.live.set(sessionId, dir)
+    log(`DIRECTORY CREATED for ${sessionId} (total ${this.created})`)
+    return dir
+  }
+}
+
+function routeOf(state) {
+  const sel = state.pending ?? state.current
+  if (sel === null) return null
+  const provider = String(sel.provider ?? '').trim()
+  const model = String(sel.model ?? '').trim()
+  return provider === '' || model === '' ? null : { provider, model }
+}
+function sameRoute(a, b) {
+  if (a === null || b === null) return a === b
+  return a.provider === b.provider && a.model === b.model
+}
+
+// ---- the FIXED entry (mirrors ComposerModelEntry / ComposerModelSource) ----
+class Entry {
+  constructor(store) {
+    this.store = store
+    this.snapshot = routeOf(store.getSnapshot())
+    this.listeners = new Set()
+    this.orphaned = false
+    this.disposed = false
+    this.unsubscribe = store.subscribe(() => this.refresh())
+  }
+  read() { return this.snapshot }
+  subscribe(l) { this.listeners.add(l); return () => this.listeners.delete(l) }
+  isOrphaned() { return this.orphaned || this.disposed }
+  orphan() { this.unsubscribe?.(); this.unsubscribe = undefined; this.orphaned = true }
+  dispose() { this.disposed = true; this.unsubscribe?.(); this.unsubscribe = undefined; this.listeners.clear() }
+  refresh() {
+    if (this.disposed) return
+    const next = routeOf(this.store.getSnapshot())
+    if (sameRoute(next, this.snapshot)) return
+    this.snapshot = next
+    for (const l of [...this.listeners]) l()
+  }
+}
+
+const sessionId = 'session-abc'
+const entries = new Map()
+function entryFor(id) {
+  const cached = entries.get(id)
+  if (cached !== undefined && !cached.isOrphaned()) return cached
+  let dir
+  try { dir = service.directoryFor(id) } catch { return undefined }
+  if (dir.disposed === true) {
+    // Keep the cached value but stop trusting the dead store; do NOT mint a new
+    // directory here (that would re-register dsh's destructive scope teardown).
+    cached?.orphan()
+    log('  [entryFor] directory is disposed -> reuse cached entry, marked orphaned')
+    return cached
+  }
+  const entry = new Entry(dir.store)
+  entries.set(id, entry)
+  log('  [entryFor] bound to a live directory')
+  return entry
+}
+
+const face = {
+  read: () => entryFor(sessionId)?.read() ?? null,
+  subscribe: (l) => entryFor(sessionId)?.subscribe(l) ?? (() => {}),
+  useCurrent: () => useSyncExternalStore(face.subscribe, face.read)
+}
+
+function Row({ label }) {
+  const model = face.useCurrent()
+  log(`RENDER ${label} -> ${model ? model.model : 'null'}`)
+  return React.createElement('div', null, `${label}: ${model ? model.model : 'null'}`)
+}
+function App() {
+  const [, force] = useState(0)
+  return React.createElement('div', null,
+    React.createElement(Row, { label: 'settingsRow' }),
+    React.createElement(Row, { label: 'optimizeButton' }))
+}
+
+function tick() {
+  rafCount += 1
+  const now = performance.now()
+  if (now - lastPaint > 500) log(`!! GAP of ${(now - lastPaint).toFixed(0)}ms in animation frames`)
+  lastPaint = now
+  requestAnimationFrame(tick)
+}
+requestAnimationFrame(tick)
+
+const root = createRoot(document.getElementById('app'))
+root.render(React.createElement(App))
+log('mounted')
+
+// Scenario 1 (same as the failing case): another scope disposes + deletes the
+// shared directory, then a model switch publishes on a NEW directory.
+setTimeout(() => {
+  log('--- A: dispose the shared directory (another scope teardown) ---')
+  service.directoryFor(sessionId).dispose()
+  service.live.delete(sessionId)
+}, 800)
+setTimeout(() => {
+  log('--- B: model switch publishes minimax-m2.7 on a NEW directory ---')
+  service.directoryFor(sessionId).store.set({ current: { provider: 'opencode-go', model: 'minimax-m2.7' }, pending: null })
+  log('    rows should now follow')
+}, 1600)
+
+// Scenario 2 (harder): the directory our cached entry points at is disposed and
+// NOT replaced by a live one; directoryFor now always returns the dead object.
+setTimeout(() => {
+  log('--- C: dispose every directory and keep returning the dead one ---')
+  for (const d of service.live.values()) d.dispose()
+  service.directoryFor = (id) => {
+    const dead = new Directory(id)
+    dead.disposed = true
+    return dead
+  }
+}, 2400)
+setTimeout(() => {
+  log(`--- RESULT --- directories created=${service.created} animationFrames=${rafCount}`)
+  log('EXPECT: rows show minimax-m2.7 after B; after C they keep the last value (no freeze, no crash)')
+  document.title = 'done'
+}, 3200)
+
+window.addEventListener('error', (e) => log(`ERROR ${e.message}`))
+window.addEventListener('unhandledrejection', (e) => log(`REJECTION ${e.reason}`))
+</script>
+</body>
+</html>

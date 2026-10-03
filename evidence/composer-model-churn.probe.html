@@ -1,0 +1,102 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><title>churn probe</title></head>
+<body>
+<div id="app"></div>
+<pre id="log"></pre>
+<script type="importmap">
+{ "imports": { "react": "https://esm.sh/react@18.3.1", "react-dom/client": "https://esm.sh/react-dom@18.3.1/client" } }
+</script>
+<script type="module">
+import React, { useSyncExternalStore } from 'react'
+import { createRoot } from 'react-dom/client'
+
+const t0 = performance.now()
+const logEl = document.getElementById('log')
+function log(m) { logEl.textContent += `${(performance.now()-t0).toFixed(0)}ms ${m}\n`; console.log(m) }
+
+function createSnapshotStore(initial) {
+  let s = initial; const ls = new Set()
+  return { getSnapshot: () => s, set(n) { s = n; for (const l of [...ls]) l() }, subscribe(l) { ls.add(l); return () => ls.delete(l) } }
+}
+
+// dsh's model seat: resolves the directory, then subscribes to its store.
+// A *disposed* store rejects new subscribers -- exactly why "nothing happened"
+// is not a safe outcome for a store that keeps getting handed out.
+const seat = { subscriptions: 0, dirs: 0 }
+function seatResolve() {
+  const dir = service.directoryFor('session-abc')
+  seat.dirs += 1
+  if (dir.disposed) throw new Error('ui-model-selection: directory is disposed')
+  dir.store.subscribe(() => {})
+  seat.subscriptions += 1
+  return dir
+}
+
+const service = {
+  created: 0,
+  live: new Map(),
+  directoryFor(id) {
+    let d = service.live.get(id)
+    if (!d) { service.created += 1; d = new Directory(id); service.live.set(id, d); log(`DIRECTORY CREATED total=${service.created}`) }
+    return d
+  }
+}
+class Directory {
+  constructor(id) {
+    this.id = id; this.disposed = false
+    this.store = createSnapshotStore({ current: { provider: 'p', model: 'm' }, pending: null })
+  }
+  dispose() { this.disposed = true }
+}
+
+// dsh's scope teardown effect for the shared session directory: when the scope
+// that owns it goes away, it disposes the shared directory and forgets it.
+function scopeTeardown() {
+  const d = service.directoryFor('session-abc')
+  d.dispose()
+  service.live.delete('session-abc')
+  log('  scope teardown: directory disposed + evicted')
+}
+
+const entries = new Map()
+function badEntryFor() {
+  const dir = service.directoryFor('session-abc')
+  const e = { snapshot: null }
+  e.snapshot = dir.store.getSnapshot().current
+  dir.store.subscribe(() => {})
+  entries.set('session-abc', e)
+  return e
+}
+const badFace = {
+  read: () => entries.get('session-abc')?.snapshot ?? null,
+  subscribe: () => () => {},
+  useCurrent: () => useSyncExternalStore(badFace.subscribe, badFace.read)
+}
+function Row() { const m = badFace.useCurrent(); return React.createElement('div', null, m?.model ?? 'null') }
+createRoot(document.getElementById('app')).render(React.createElement(Row))
+log('mounted; running idle churn scenario for 4s')
+
+// Nothing user-visible happens here -- no switch, no reload -- but our plugin
+// re-resolves entryFor() on every render, and each re-resolve files a new
+// teardown with dsh that kills the *model seat's* directory too.
+let renders = 0
+const storm = setInterval(() => {
+  renders += 1
+  try {
+    const e = badEntryFor()
+    try { seatResolve() } catch (err) { log(`  seat resolve FAILED: ${err.message}`) }
+    e.snapshot = { provider: 'p', model: 'm' + renders }
+    scopeTeardown()
+  } catch (e) { log(`  render error: ${e.message}`) }
+  if (renders % 5000 === 0) log(`renders=${renders} dirs=${service.created} seatSubs=${seat.subscriptions}`)
+}, 0)
+setTimeout(() => {
+  clearInterval(storm)
+  log(`RESULT renders=${renders} dirsCreated=${service.created} seatSubscriptions=${seat.subscriptions}`)
+  log('A large dirsCreated with seat resolve failures == our re-resolve becoming destructive')
+  document.title = 'done'
+}, 4000)
+</script>
+</body>
+</html>

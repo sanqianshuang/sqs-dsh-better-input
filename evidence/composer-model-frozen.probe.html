@@ -1,0 +1,170 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>composer-model face probe</title>
+</head>
+<body>
+<div id="app"></div>
+<pre id="log"></pre>
+<script type="importmap">
+{
+  "imports": {
+    "react": "https://esm.sh/react@18.3.1",
+    "react-dom/client": "https://esm.sh/react-dom@18.3.1/client"
+  }
+}
+</script>
+<script type="module">
+import React, { useSyncExternalStore, useState } from 'react'
+import { createRoot } from 'react-dom/client'
+
+const t0 = performance.now()
+const logLines = []
+const logEl = document.getElementById('log')
+let lastPaint = t0
+let rafCount = 0
+function log(msg) {
+  logLines.push(`${(performance.now() - t0).toFixed(1)}ms  ${msg}`)
+  logEl.textContent = logLines.join('\n')
+  console.log(msg)
+}
+
+// ---------------------------------------------------------------- fake store
+// Same contract as @deepseek-ai/dsh-client-store's createSnapshotStore:
+// getSnapshot() must be stable between notifications.
+function createSnapshotStore(initial) {
+  let snapshot = initial
+  const listeners = new Set()
+  return {
+    getSnapshot: () => snapshot,
+    set(next) {
+      snapshot = next
+      for (const l of [...listeners]) l()
+    },
+    subscribe(listener) {
+      listeners.add(listener)
+      return () => listeners.delete(listener)
+    }
+  }
+}
+
+// ------------------------------------------------------- directory + service
+// Mirrors dsh-client-ui-model-selection: one directory per Session binding,
+// a scope teardown that disposes it, and a second entrypoint that re-resolves.
+class Directory {
+  constructor(sessionId) {
+    this.sessionId = sessionId
+    this.disposed = false
+    this.store = createSnapshotStore({ current: { provider: 'opencode-go', model: 'deepseek-v4.1-flash' }, pending: null })
+  }
+  dispose() { this.disposed = true }
+}
+
+const service = {
+  created: 0,
+  live: new Map(),
+  directoryFor(sessionId) {
+    let dir = this.live.get(sessionId)
+    if (dir) return dir
+    this.created += 1
+    dir = new Directory(sessionId)
+    this.live.set(sessionId, dir)
+    log(`DIRECTORY CREATED for ${sessionId} (total ${this.created})`)
+    return dir
+  }
+}
+
+// ------------------------------------------------- mimic the plugin's face
+// This is the current sqs.2 shape: the face reads through entryFor().
+const sessionId = 'session-abc'
+const entries = new Map()
+function entryFor(id) {
+  const cached = entries.get(id)
+  if (cached !== undefined) return cached
+  const dir = service.directoryFor(id)            // throws for unknown sessions
+  const entry = { dir, snapshot: routeOf(dir.store.getSnapshot()) }
+  dir.store.subscribe(() => {
+    const next = routeOf(dir.store.getSnapshot())
+    if (sameRoute(next, entry.snapshot)) return
+    entry.snapshot = next
+    for (const l of [...entry.listeners]) l()
+  })
+  entry.listeners = new Set()
+  entry.read = () => entry.snapshot
+  entry.subscribe = (l) => { entry.listeners.add(l); return () => entry.listeners.delete(l) }
+  entries.set(id, entry)
+  return entry
+}
+function routeOf(state) {
+  const sel = state.pending ?? state.current
+  return sel === null ? null : { provider: sel.provider, model: sel.model }
+}
+function sameRoute(a, b) {
+  if (a === null || b === null) return a === b
+  return a.provider === b.provider && a.model === b.model
+}
+
+const face = {
+  read: () => entryFor(sessionId).read(),
+  subscribe: (l) => entryFor(sessionId).subscribe(l),
+  useCurrent: () => useSyncExternalStore(face.subscribe, face.read)
+}
+
+// ------------------------------------------------------------- the component
+function Row({ label }) {
+  const model = face.useCurrent()
+  log(`RENDER ${label} -> ${model ? model.model : 'null'}`)
+  return React.createElement('div', null, `${label}: ${model ? model.model : 'null'}`)
+}
+
+function App() {
+  const [, force] = useState(0)
+  return React.createElement('div', null,
+    React.createElement(Row, { label: 'settingsRow' }),
+    React.createElement(Row, { label: 'optimizeButton' })
+  )
+}
+
+// rAF watchdog: if frames stop arriving, scheduling (or the main thread) is dead.
+function tick() {
+  rafCount += 1
+  const now = performance.now()
+  if (now - lastPaint > 500) log(`!! GAP of ${(now - lastPaint).toFixed(0)}ms in animation frames`)
+  lastPaint = now
+  requestAnimationFrame(tick)
+}
+requestAnimationFrame(tick)
+
+const root = createRoot(document.getElementById('app'))
+root.render(React.createElement(App))
+log('mounted')
+
+// ------------------------------------------------------------- the scenario
+// 1. Another scope tears the shared directory down (dsh does this on scope teardown).
+// 2. The user switches model; the projection publishes on the NEW directory.
+setTimeout(() => {
+  log('--- A: dispose the shared directory (another scope teardown) ---')
+  service.directoryFor(sessionId).dispose()
+  service.live.delete(sessionId)
+}, 800)
+
+setTimeout(() => {
+  log('--- B: simulate a model switch; dsh republishes on a NEW directory ---')
+  const dir = service.directoryFor(sessionId)
+  dir.store.set({ current: { provider: 'opencode-go', model: 'minimax-m2.7' }, pending: null })
+  log('--- B done: published minimax-m2.7 on the new directory ---')
+}, 1600)
+
+setTimeout(() => {
+  log(`--- RESULT --- directories created=${service.created} animationFrames=${rafCount}`)
+  log('PASS if the rows re-rendered to minimax-m2.7')
+  log('FAIL (frozen) if the rows still show deepseek-v4.1-flash')
+  document.title = 'done'
+}, 2400)
+
+window.addEventListener('error', (e) => log(`ERROR ${e.message}`))
+window.addEventListener('unhandledrejection', (e) => log(`REJECTION ${e.reason}`))
+</script>
+</body>
+</html>

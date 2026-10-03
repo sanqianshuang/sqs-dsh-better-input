@@ -132,6 +132,11 @@ export async function apply(ctx: ClientContext): Promise<() => Promise<void>> {
           locale: BETTER_INPUT_NS,
           inject: (sessionId) => ({
             remote,
+            // The assist's LLM call is stamped with this Session so
+            // session-scoped transport metadata (e.g. OpenCode's
+            // `x-opencode-session`) can be attached to it — see
+            // `src/polish/assist-options.ts`.
+            sessionId,
             useSettings,
             composerModel: composerModels.faceFor(sessionId)
           })
@@ -152,6 +157,7 @@ export async function apply(ctx: ClientContext): Promise<() => Promise<void>> {
           locale: BETTER_INPUT_NS,
           inject: (sessionId) => ({
             remote,
+            sessionId,
             voiceSession: voiceSessionFor(sessionId),
             useSettings,
             composerModel: composerModels.faceFor(sessionId)

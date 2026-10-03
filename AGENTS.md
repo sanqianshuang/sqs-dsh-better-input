@@ -76,11 +76,18 @@ export DSH_HOME=/tmp/probe       # honoured by dsh; proves composition without t
 - Client `inject` **omits** `remote.betterInput`: it is mounted via `ctx.remote.$mount`, so
   declaring it on the outer inject deadlocks. Declare it only on the inner `ctx.inject()`.
 - New externally visible names go in `src/identity.ts`, never as literals.
-- Settings are a **self-owned JSON doc** under `~/.dsh/sqs-dsh-better-input/`, not the settings
-  API — `settings.register` was removed in 0.1.7 and is still absent. Out-of-range legacy values
-  are **repaired on read** in `settings/store.ts#normalizeSettings`.
+- Settings are a **self-owned JSON doc** under dsh's home (`$DSH_HOME`, default `~/.dsh`) in
+  `sqs-dsh-better-input/`, not the settings API — `settings.register` was removed in 0.1.7 and is
+  still absent. Resolve that home through `src/home.ts`, never `os.homedir()`: `homedir()` ignores
+  `$DSH_HOME` and silently splits the plugin's documents away from the credentials and sessions
+  dsh itself is using. Out-of-range legacy values are **repaired on read** in
+  `settings/store.ts#normalizeSettings`.
 - **Only the model follows the composer, never the thinking tier.** `resolveEffortConfig()` only
   forwards a tier the model advertises. Guard: `npm run check:routes`.
+- **First-launch auto-fill uses dsh's agent default model, never `routes[0]`.** `listProviders()`
+  is registration order, so `routes[0]` is always `deepseek-official`; storing it silently pins
+  the plugin to the official key. `resolveAutoRoute()` in `src/config.ts`. Guard:
+  `npm run check:routes`.
 - LF everywhere (`.gitattributes`).
 
 ## Do not restore

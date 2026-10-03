@@ -3,6 +3,7 @@ import type { SnapshotSelectorHook, TranslateNS } from '@deepseek-ai/dsh-client-
 import type { InputState } from '@deepseek-ai/dsh-client-ui-conversation/client'
 import { DEFAULT_SETTINGS, effectiveRecordingSeconds, resolveInputModelRoute, type BetterInputSettings, type BetterInputSettingsPatch, type ComposerModelRoute, type EffectiveModelRoute } from '../config.js'
 import type { BetterInputRemote } from '../remote.js'
+import { resolveAssistRoute } from './assist-route.js'
 import type { ComposerModelFace } from './composer-model.js'
 import { captureFailureMessage, NativeSpeechSession, sessionOptionsFor, type SpeechSessionSettings } from './native-speech.js'
 import { isCaptureSupported } from './audio-capture.js'
@@ -26,6 +27,12 @@ export type InputZoneLikeProps = {
   readonly useSettings: () => SettingsFace
   /** The composer's selected model for this Session (see composer-model.ts). */
   readonly composerModel: ComposerModelFace
+  /**
+   * The Session this button belongs to. Forwarded with the polish call so dsh's
+   * `llm/stream` middleware can attach the per-session transport metadata some
+   * provider routes require (see `src/polish/assist-options.ts`).
+   */
+  readonly sessionId: string
   readonly t: Translate
 }
 
@@ -68,7 +75,7 @@ function resolvePolishRoute(
  * when the user stops, one pass over the whole recording produces the
  * authoritative transcript and AI polishing runs on that.
  */
-export function MicrophoneButton({ useInput, inputActions, voiceSession, remote, useSettings, composerModel, t }: InputZoneLikeProps) {
+export function MicrophoneButton({ useInput, inputActions, voiceSession, remote, useSettings, composerModel, sessionId, t }: InputZoneLikeProps) {
   const snapshot = useVoiceInputSession(voiceSession)
   const state = snapshot.state
   const setState = (next: typeof state, detail = '') => voiceSession.setState(next, detail)
@@ -205,32 +212,51 @@ export function MicrophoneButton({ useInput, inputActions, voiceSession, remote,
             return
           }
           const draftAtStop = writeDraft(transcript)
-          const current = settingsRef.current
-          // Re-resolve at stop time: the composer's model may have changed while
-          // the user was speaking, and this is the call that actually runs.
-          // `settingsRef.current` is read inside so the helper owns the whole
-          // "is polish both enabled and pointed at a real route" question.
-          const route = resolvePolishRoute(current, composerModel.read())
-          if (current !== null && current.polishingEnabled && route !== null) {
-            void polishDraft({
-              transcript,
-              baseDraft,
-              draftAtStop,
-              provider: route.provider,
-              model: route.model,
-              reasoningEffort: route.reasoningEffort,
-              remote,
-              setState,
-              latestDraftRef,
-              actionsRef: { current: inputActions },
-              polishAbortRef
-            })
-          } else {
-            setState('idle')
-          }
+          void finishPolishing(transcript, draftAtStop)
         }
       })
     )
+
+    /**
+     * Resolve the polish route and run the assist.
+     *
+     * One call through the shared resolver (`src/client/assist-route.ts`), which
+     * is the same function the settings page's follow row renders from: when the
+     * feature follows the composer it asks the Host — the browser's snapshot of
+     * the composer selection can legitimately read `null` while the
+     * model-selection plugin's Host catalog is warming up, and a local
+     * substitute there would quietly polish with the *settings* route, i.e. a
+     * different model than the input box displays. When the Host cannot answer
+     * (follow off, unreadable selection, failed RPC) it degrades to exactly the
+     * route this button's own enable/disable state is computed from, so a
+     * readable selection is never silently skipped. The resolver never rejects.
+     */
+    const finishPolishing = async (transcript: string, draftAtStop: string): Promise<void> => {
+      const current = settingsRef.current
+      let route: EffectiveModelRoute | null = null
+      if (current !== null && current.polishingEnabled) {
+        route = (await resolveAssistRoute(remote, current, 'polish', sessionId, composerModel.read()))?.route ?? null
+      }
+      if (!mountedRef.current) return
+      if (route === null) {
+        setState('idle')
+        return
+      }
+      void polishDraft({
+        transcript,
+        baseDraft: baseDraftRef.current,
+        draftAtStop,
+        provider: route.provider,
+        model: route.model,
+        reasoningEffort: route.reasoningEffort,
+        sessionId,
+        remote,
+        setState,
+        latestDraftRef,
+        actionsRef: { current: inputActions },
+        polishAbortRef
+      })
+    }
 
     speechRef.current = session
     void session.start().then(() => {
@@ -300,6 +326,12 @@ export interface PolishDraftOptions {
   model: string
   /** Reasoning effort to forward; `''` asks the Host for its default policy. */
   reasoningEffort: string
+  /**
+   * The Session this polish runs for. Forwarded to the Host so dsh's
+   * `llm/stream` middleware can attach per-session transport metadata (see
+   * `src/polish/assist-options.ts`); `''` when the caller has no Session.
+   */
+  sessionId: string
   remote: BetterInputRemote
   setState: (state: 'idle' | 'error' | 'polish-error' | 'polishing', detail?: string) => void
   latestDraftRef: { current: string }
@@ -319,6 +351,7 @@ export async function polishDraft(options: PolishDraftOptions): Promise<void> {
       options.provider,
       options.model,
       options.reasoningEffort,
+      options.sessionId,
       controller.signal
     )
     if (controller.signal.aborted) return

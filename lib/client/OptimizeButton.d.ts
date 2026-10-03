@@ -23,6 +23,12 @@ export type OptimizeButtonProps = {
     readonly useSettings: () => SettingsFace;
     /** The composer's selected model for this Session (see composer-model.ts). */
     readonly composerModel: ComposerModelFace;
+    /**
+     * The Session this button belongs to. Forwarded with the optimize call so
+     * dsh's `llm/stream` middleware can attach the per-session transport metadata
+     * some provider routes require (see `src/polish/assist-options.ts`).
+     */
+    readonly sessionId: string;
     readonly t: Translate;
 };
 /**
@@ -32,5 +38,5 @@ export type OptimizeButtonProps = {
  * the original and optimized text. The draft is replaced only when the user
  * clicks "Adopt".
  */
-export declare function OptimizeButton({ useChat, useInput, inputActions, remote, useSettings, composerModel, t }: OptimizeButtonProps): import("react").JSX.Element;
+export declare function OptimizeButton({ useChat, useInput, inputActions, remote, useSettings, composerModel, sessionId, t }: OptimizeButtonProps): import("react").JSX.Element;
 export {};

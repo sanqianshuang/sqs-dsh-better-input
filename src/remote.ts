@@ -1,6 +1,6 @@
 import type { RemoteResult, TypertRemoteContribution } from '@deepseek-ai/dsh-typert-protocol'
 import type { ClientRemote } from '@deepseek-ai/dsh-api-remotes/client'
-import type { AboutInfoWire, BetterInputSettingsPatch, BetterInputSettingsView, PolishRoute, ReasoningEffortInfo, SpeechStatusWire, SpeechTranscriptWire, TemplateInputWire, TemplateWire, UpdateCheckResultWire } from './remote-contract.js'
+import type { AboutInfoWire, AssistRouteView, BetterInputSettingsPatch, BetterInputSettingsView, PolishRoute, ReasoningEffortInfo, SpeechStatusWire, SpeechTranscriptWire, TemplateInputWire, TemplateWire, UpdateCheckResultWire } from './remote-contract.js'
 import { PACKAGE_NAME } from './identity.js'
 
 export type BetterInputRemote = ClientRemote['betterInput']
@@ -11,10 +11,11 @@ declare module '@deepseek-ai/dsh-typert-protocol' {
     updateSettings: (patch: BetterInputSettingsPatch, signal?: AbortSignal) => Promise<RemoteResult<BetterInputSettingsView>>
     listRoutes: () => Promise<RemoteResult<PolishRoute[]>>
     resolveModelEfforts: (provider: string, model: string) => Promise<RemoteResult<{ efforts: readonly ReasoningEffortInfo[]; defaultEffort?: string }>>
+    resolveAssistRoute: (feature: string, sessionId: string) => Promise<RemoteResult<AssistRouteView>>
     getAbout: () => Promise<RemoteResult<AboutInfoWire>>
     checkForUpdate: (signal?: AbortSignal) => Promise<RemoteResult<UpdateCheckResultWire>>
-    polish: (transcript: string, provider: string, model: string, effort: string, signal?: AbortSignal) => Promise<RemoteResult<string>>
-    optimize: (text: string, provider: string, model: string, context: string, effort: string, signal?: AbortSignal) => Promise<RemoteResult<string>>
+    polish: (transcript: string, provider: string, model: string, effort: string, sessionId: string, signal?: AbortSignal) => Promise<RemoteResult<string>>
+    optimize: (text: string, provider: string, model: string, context: string, effort: string, sessionId: string, signal?: AbortSignal) => Promise<RemoteResult<string>>
     templatesList: () => Promise<RemoteResult<{ templates: TemplateWire[] }>>
     templatesSave: (template: TemplateInputWire, signal?: AbortSignal) => Promise<RemoteResult<{ template: TemplateWire }>>
     templatesRemove: (id: string, signal?: AbortSignal) => Promise<RemoteResult<{ removed: boolean }>>
@@ -28,10 +29,11 @@ declare module '@deepseek-ai/dsh-typert-protocol' {
     'betterInput/updateSettings': (patch: BetterInputSettingsPatch, signal?: AbortSignal) => Promise<RemoteResult<BetterInputSettingsView>>
     'betterInput/listRoutes': () => Promise<RemoteResult<PolishRoute[]>>
     'betterInput/resolveModelEfforts': (provider: string, model: string) => Promise<RemoteResult<{ efforts: readonly ReasoningEffortInfo[]; defaultEffort?: string }>>
+    'betterInput/resolveAssistRoute': (feature: string, sessionId: string) => Promise<RemoteResult<AssistRouteView>>
     'betterInput/getAbout': () => Promise<RemoteResult<AboutInfoWire>>
     'betterInput/checkForUpdate': (signal?: AbortSignal) => Promise<RemoteResult<UpdateCheckResultWire>>
-    'betterInput/polish': (transcript: string, provider: string, model: string, effort: string, signal?: AbortSignal) => Promise<RemoteResult<string>>
-    'betterInput/optimize': (text: string, provider: string, model: string, context: string, effort: string, signal?: AbortSignal) => Promise<RemoteResult<string>>
+    'betterInput/polish': (transcript: string, provider: string, model: string, effort: string, sessionId: string, signal?: AbortSignal) => Promise<RemoteResult<string>>
+    'betterInput/optimize': (text: string, provider: string, model: string, context: string, effort: string, sessionId: string, signal?: AbortSignal) => Promise<RemoteResult<string>>
     'betterInput/templatesList': () => Promise<RemoteResult<{ templates: TemplateWire[] }>>
     'betterInput/templatesSave': (template: TemplateInputWire, signal?: AbortSignal) => Promise<RemoteResult<{ template: TemplateWire }>>
     'betterInput/templatesRemove': (id: string, signal?: AbortSignal) => Promise<RemoteResult<{ removed: boolean }>>
@@ -144,6 +146,18 @@ export const TYPERT_REMOTE: TypertRemoteContribution = {
       result: codec(symbol('ResolveModelEffortsResult'))
     },
     {
+      id: `${PACKAGE_NAME}#betterInput/resolveAssistRoute`,
+      service: 'BetterInputPolish',
+      namespace: 'betterInput',
+      method: 'resolveAssistRoute',
+      invocation: { kind: 'direct' },
+      parameters: [
+        { name: 'feature', wire: 'feature', source: 'json', codec: codec('string') },
+        { name: 'sessionId', wire: 'sessionId', source: 'json', codec: codec('string') }
+      ],
+      result: codec(symbol('AssistRouteView'))
+    },
+    {
       id: `${PACKAGE_NAME}#betterInput/getAbout`,
       service: 'BetterInputPolish',
       namespace: 'betterInput',
@@ -172,7 +186,8 @@ export const TYPERT_REMOTE: TypertRemoteContribution = {
         { name: 'transcript', wire: 'transcript', source: 'json', codec: codec('string') },
         { name: 'provider', wire: 'provider', source: 'json', codec: codec('string') },
         { name: 'model', wire: 'model', source: 'json', codec: codec('string') },
-        { name: 'effort', wire: 'effort', source: 'json', codec: codec('string') }
+        { name: 'effort', wire: 'effort', source: 'json', codec: codec('string') },
+        { name: 'sessionId', wire: 'sessionId', source: 'json', codec: codec('string') }
       ],
       cancellation: { parameter: 'signal' },
       result: codec('string')
@@ -188,7 +203,8 @@ export const TYPERT_REMOTE: TypertRemoteContribution = {
         { name: 'provider', wire: 'provider', source: 'json', codec: codec('string') },
         { name: 'model', wire: 'model', source: 'json', codec: codec('string') },
         { name: 'context', wire: 'context', source: 'json', codec: codec('string') },
-        { name: 'effort', wire: 'effort', source: 'json', codec: codec('string') }
+        { name: 'effort', wire: 'effort', source: 'json', codec: codec('string') },
+        { name: 'sessionId', wire: 'sessionId', source: 'json', codec: codec('string') }
       ],
       cancellation: { parameter: 'signal' },
       result: codec('string')

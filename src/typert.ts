@@ -1,4 +1,4 @@
-import { aboutInfoSchema, betterInputSettingsPatchSchema, betterInputSettingsViewSchema, listRoutesResultSchema, optimizeResultSchema, polishResultSchema, resolveModelEffortsResultSchema, speechStatusSchema, speechTranscriptSchema, templateInputSchema, templateListResultSchema, templateRemoveResultSchema, templateSaveResultSchema, textSchema, updateCheckResultSchema } from './remote-contract.js'
+import { aboutInfoSchema, assistRouteViewSchema, betterInputSettingsPatchSchema, betterInputSettingsViewSchema, listRoutesResultSchema, optimizeResultSchema, polishResultSchema, resolveModelEffortsResultSchema, speechStatusSchema, speechTranscriptSchema, templateInputSchema, templateListResultSchema, templateRemoveResultSchema, templateSaveResultSchema, textSchema, updateCheckResultSchema } from './remote-contract.js'
 import { PACKAGE_NAME } from './identity.js'
 
 /**
@@ -85,6 +85,18 @@ export const TYPERT = {
       result: codec(symbol('ResolveModelEffortsResult'), resolveModelEffortsResultSchema)
     },
     {
+      id: `${PACKAGE_NAME}#betterInput/resolveAssistRoute`,
+      service: 'BetterInputPolish',
+      namespace: 'betterInput',
+      method: 'resolveAssistRoute',
+      invocation: { kind: 'direct' },
+      parameters: [
+        { name: 'feature', wire: 'feature', source: 'json', codec: codec('string', textSchema) },
+        { name: 'sessionId', wire: 'sessionId', source: 'json', codec: codec('string', textSchema) }
+      ],
+      result: codec(symbol('AssistRouteView'), assistRouteViewSchema)
+    },
+    {
       id: `${PACKAGE_NAME}#betterInput/getAbout`,
       service: 'BetterInputPolish',
       namespace: 'betterInput',
@@ -113,7 +125,8 @@ export const TYPERT = {
         { name: 'transcript', wire: 'transcript', source: 'json', codec: codec('string', textSchema) },
         { name: 'provider', wire: 'provider', source: 'json', codec: codec('string', textSchema) },
         { name: 'model', wire: 'model', source: 'json', codec: codec('string', textSchema) },
-        { name: 'effort', wire: 'effort', source: 'json', codec: codec('string', textSchema) }
+        { name: 'effort', wire: 'effort', source: 'json', codec: codec('string', textSchema) },
+        { name: 'sessionId', wire: 'sessionId', source: 'json', codec: codec('string', textSchema) }
       ],
       cancellation: { parameter: 'signal' },
       result: codec('string', polishResultSchema)
@@ -129,7 +142,8 @@ export const TYPERT = {
         { name: 'provider', wire: 'provider', source: 'json', codec: codec('string', textSchema) },
         { name: 'model', wire: 'model', source: 'json', codec: codec('string', textSchema) },
         { name: 'context', wire: 'context', source: 'json', codec: codec('string', textSchema) },
-        { name: 'effort', wire: 'effort', source: 'json', codec: codec('string', textSchema) }
+        { name: 'effort', wire: 'effort', source: 'json', codec: codec('string', textSchema) },
+        { name: 'sessionId', wire: 'sessionId', source: 'json', codec: codec('string', textSchema) }
       ],
       cancellation: { parameter: 'signal' },
       result: codec('string', optimizeResultSchema)
@@ -229,18 +243,29 @@ export const TYPERT = {
         { kind: 'method', name: 'updateSettings', signature: 'updateSettings(patch: BetterInputSettingsPatch, signal: AbortSignal): Promise<BetterInputSettingsView>', summary: 'Update plugin settings when the request has not been cancelled.', jsDoc: '/** Update plugin settings when the request has not been cancelled. */' },
         { kind: 'method', name: 'listRoutes', signature: 'listRoutes(): Promise<PolishRoute[]>', summary: 'List models already registered in dsh.', jsDoc: '/** List models already registered in dsh. */' },
         { kind: 'method', name: 'resolveModelEfforts', signature: 'resolveModelEfforts(provider: string, model: string): Promise<{ efforts: readonly ReasoningEffortInfo[]; defaultEffort?: string }>', summary: 'Resolve reasoning-effort tiers for one route (lazy).', jsDoc: '/** Resolve reasoning-effort tiers for one route (lazy). */' },
+        { kind: 'method', name: 'resolveAssistRoute', signature: 'resolveAssistRoute(feature: string, sessionId: string): Promise<AssistRouteView>', summary: 'Resolve the model route an assist will call, from the Host side.', jsDoc: '/** Resolve the model route an assist will call, from the Host side. */' },
         { kind: 'method', name: 'getAbout', signature: 'getAbout(): AboutInfo', summary: 'Read the installed plugin identity and repository info.', jsDoc: '/** Read the installed plugin identity and repository info. */' },
         { kind: 'method', name: 'checkForUpdate', signature: 'checkForUpdate(signal: AbortSignal): Promise<UpdateCheckResult>', summary: 'Check the npm registry for the latest published version.', jsDoc: '/** Check the npm registry for the latest published version. */' },
-        { kind: 'method', name: 'polish', signature: 'polish(transcript: string, provider: string, model: string, effort: string, signal: AbortSignal): Promise<string>', summary: 'Polish one transcript through a selected dsh route.', jsDoc: '/** Polish one transcript through a selected dsh route. */' },
-        { kind: 'method', name: 'optimize', signature: 'optimize(text: string, provider: string, model: string, context: string, effort: string, signal: AbortSignal): Promise<string>', summary: 'Optimize one prompt through a selected dsh route.', jsDoc: '/** Optimize one prompt through a selected dsh route. */' },
+        { kind: 'method', name: 'polish', signature: 'polish(transcript: string, provider: string, model: string, effort: string, sessionId: string, signal: AbortSignal): Promise<string>', summary: 'Polish one transcript through a selected dsh route.', jsDoc: '/** Polish one transcript through a selected dsh route. */' },
+        { kind: 'method', name: 'optimize', signature: 'optimize(text: string, provider: string, model: string, context: string, effort: string, sessionId: string, signal: AbortSignal): Promise<string>', summary: 'Optimize one prompt through a selected dsh route.', jsDoc: '/** Optimize one prompt through a selected dsh route. */' },
         { kind: 'method', name: 'templatesList', signature: 'templatesList(): Promise<TemplateListResult>', summary: 'List all saved prompt templates, newest first.', jsDoc: '/** List all saved prompt templates, newest first. */' },
         { kind: 'method', name: 'templatesSave', signature: 'templatesSave(template: TemplateInput, signal: AbortSignal): Promise<TemplateSaveResult>', summary: 'Create or update one prompt template on the Host filesystem.', jsDoc: '/** Create or update one prompt template on the Host filesystem. */' },
         { kind: 'method', name: 'templatesRemove', signature: 'templatesRemove(id: string, signal: AbortSignal): Promise<TemplateRemoveResult>', summary: 'Remove one prompt template by id.', jsDoc: '/** Remove one prompt template by id. */' }
       ],
       types: [
-        { name: 'BetterInputSettingsView', declaration: 'export interface BetterInputSettingsView { available: boolean; writable: boolean; settings: BetterInputSettings; overridden: string[] }' },
+        // Declared before the types that reference it: these declarations are
+        // documentation the loader checks for *presence* (it never resolves
+        // `ComposerModelRoute`), so a name used here and not declared is a
+        // dangling reference — the reader of the registry has no way to learn
+        // what the field holds.
+        { name: 'ComposerModelRoute', declaration: 'export interface ComposerModelRoute { readonly provider: string; readonly model: string }' },
+        { name: 'EffectiveModelRoute', declaration: "export interface EffectiveModelRoute { readonly provider: string; readonly model: string; readonly reasoningEffort: string }" },
+        { name: 'BetterInputSettings', declaration: 'export interface BetterInputSettings { language: string; maxRecordingSeconds: number; streamingPreview: boolean; segmentSeconds: number; autoStopSeconds: number; polishingEnabled: boolean; polishFollowInputModel: boolean; polishProvider: string; polishModel: string; polishReasoningEffort: string; polishPrompt: string; optimizeFollowInputModel: boolean; optimizeProvider: string; optimizeModel: string; optimizeReasoningEffort: string; optimizePrompt: string; contextTurns: number }' },
+        { name: 'BetterInputSettingsView', declaration: 'export interface BetterInputSettingsView { available: boolean; writable: boolean; settings: BetterInputSettings; overridden: string[]; defaultRoute: ComposerModelRoute | null; defaultPolishPrompt: string; defaultOptimizePrompt: string }' },
         { name: 'BetterInputSettingsPatch', declaration: 'export type BetterInputSettingsPatch = Partial<BetterInputSettings>' },
-        { name: 'PolishRoute', declaration: 'export interface ReasoningEffortInfo { id: string; name: string; description?: string } export interface PolishRoute { provider: string; providerName: string; model: string; modelName: string; reasoningEfforts: readonly ReasoningEffortInfo[]; defaultReasoningEffort?: string }' },
+        { name: 'ReasoningEffortInfo', declaration: 'export interface ReasoningEffortInfo { id: string; name: string; description?: string }' },
+        { name: 'PolishRoute', declaration: 'export interface PolishRoute { provider: string; providerName: string; model: string; modelName: string; reasoningEfforts: readonly ReasoningEffortInfo[]; defaultReasoningEffort?: string }' },
+        { name: 'AssistRouteView', declaration: "export interface AssistRouteView { provider: string; model: string; reasoningEffort: string; source: 'composer' | 'settings' | 'none' }" },
         { name: 'AboutInfo', declaration: 'export interface AboutInfo { repository: string; repositorySlug: string; version: string; license: string; updateCommand: string; updateCommandNpx: string }' },
         { name: 'UpdateCheckResult', declaration: "export type UpdateCheckResult = { status: 'up-to-date' | 'update-available' | 'unpublished' | 'error'; installed: string; latest: string | null; updateCommand: string; updateCommandNpx: string }" },
         { name: 'BetterInputTemplate', declaration: 'export interface BetterInputTemplate { id: string; name: string; description: string; content: string; tags: readonly string[]; createdAt: number; updatedAt: number }' },

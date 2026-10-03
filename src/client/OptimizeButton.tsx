@@ -4,7 +4,8 @@ import type { SnapshotSelectorHook, TranslateNS } from '@deepseek-ai/dsh-client-
 import type { InputState } from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type { ChatSnapshot } from '@deepseek-ai/dsh-client-ui-chat/client'
 import type { BetterInputRemote } from '../remote.js'
-import { resolveInputModelRoute } from '../config.js'
+import { resolveInputModelRoute, type EffectiveModelRoute } from '../config.js'
+import { resolveAssistRoute } from './assist-route.js'
 import type { ComposerModelFace } from './composer-model.js'
 import type { SettingsFace } from './MicrophoneButton.js'
 
@@ -28,6 +29,12 @@ export type OptimizeButtonProps = {
   readonly useSettings: () => SettingsFace
   /** The composer's selected model for this Session (see composer-model.ts). */
   readonly composerModel: ComposerModelFace
+  /**
+   * The Session this button belongs to. Forwarded with the optimize call so
+   * dsh's `llm/stream` middleware can attach the per-session transport metadata
+   * some provider routes require (see `src/polish/assist-options.ts`).
+   */
+  readonly sessionId: string
   readonly t: Translate
 }
 
@@ -44,7 +51,7 @@ type OptimizeState =
  * the original and optimized text. The draft is replaced only when the user
  * clicks "Adopt".
  */
-export function OptimizeButton({ useChat, useInput, inputActions, remote, useSettings, composerModel, t }: OptimizeButtonProps) {
+export function OptimizeButton({ useChat, useInput, inputActions, remote, useSettings, composerModel, sessionId, t }: OptimizeButtonProps) {
   const [state, setState] = useState<OptimizeState>({ kind: 'idle' })
   const settingsFace = useSettings()
   const abortRef = useRef<AbortController | null>(null)
@@ -98,18 +105,31 @@ export function OptimizeButton({ useChat, useInput, inputActions, remote, useSet
       return
     }
 
-    // Re-resolve at click time: the composer's model may have changed since the
-    // last render, and the click is what actually starts the request.
-    const current = resolveInputModelRoute(
-      settings?.optimizeFollowInputModel ?? true,
-      composerModel.read(),
-      {
-        provider: settings?.optimizeProvider ?? '',
-        model: settings?.optimizeModel ?? '',
-        reasoningEffort: settings?.optimizeReasoningEffort ?? ''
-      }
-    )
-    if (current.provider.trim() === '' || current.model.trim() === '') {
+    // Resolve the route at click time. Following the composer asks the **Host**
+    // (it owns the settings document and the Session's durable selection; the
+    // browser only holds a render-time snapshot whose backing store can
+    // legitimately read `null` while the model catalog warms up). The shared
+    // resolver never rejects, so a failed RPC cannot turn this handler into an
+    // unhandled rejection — it degrades to the snapshot this button renders
+    // from. See `src/client/assist-route.ts`.
+    let current: EffectiveModelRoute | null = null
+    try {
+      const resolved = await resolveAssistRoute(
+        remote,
+        settings,
+        'optimize',
+        sessionId,
+        // Fresh read rather than the render-time value: the click may land in
+        // the same tick as a model switch.
+        composerModel.read()
+      )
+      current = resolved?.route ?? null
+    } catch {
+      // Unreachable by construction (the resolver catches internally), but a
+      // click handler must never die silently.
+      current = null
+    }
+    if (current === null) {
       setState({ kind: 'error', message: t('optimizeNotConfigured') })
       return
     }
@@ -129,6 +149,7 @@ export function OptimizeButton({ useChat, useInput, inputActions, remote, useSet
         current.model,
         context,
         current.reasoningEffort,
+        sessionId,
         controller.signal
       )
       if (controller.signal.aborted) return

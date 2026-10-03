@@ -1,6 +1,6 @@
 import type { RemoteResult, TypertRemoteContribution } from '@deepseek-ai/dsh-typert-protocol';
 import type { ClientRemote } from '@deepseek-ai/dsh-api-remotes/client';
-import type { AboutInfoWire, BetterInputSettingsPatch, BetterInputSettingsView, PolishRoute, ReasoningEffortInfo, SpeechStatusWire, SpeechTranscriptWire, TemplateInputWire, TemplateWire, UpdateCheckResultWire } from './remote-contract.js';
+import type { AboutInfoWire, AssistRouteView, BetterInputSettingsPatch, BetterInputSettingsView, PolishRoute, ReasoningEffortInfo, SpeechStatusWire, SpeechTranscriptWire, TemplateInputWire, TemplateWire, UpdateCheckResultWire } from './remote-contract.js';
 export type BetterInputRemote = ClientRemote['betterInput'];
 declare module '@deepseek-ai/dsh-typert-protocol' {
     interface TypertRemoteNamespace$betterInput {
@@ -11,10 +11,11 @@ declare module '@deepseek-ai/dsh-typert-protocol' {
             efforts: readonly ReasoningEffortInfo[];
             defaultEffort?: string;
         }>>;
+        resolveAssistRoute: (feature: string, sessionId: string) => Promise<RemoteResult<AssistRouteView>>;
         getAbout: () => Promise<RemoteResult<AboutInfoWire>>;
         checkForUpdate: (signal?: AbortSignal) => Promise<RemoteResult<UpdateCheckResultWire>>;
-        polish: (transcript: string, provider: string, model: string, effort: string, signal?: AbortSignal) => Promise<RemoteResult<string>>;
-        optimize: (text: string, provider: string, model: string, context: string, effort: string, signal?: AbortSignal) => Promise<RemoteResult<string>>;
+        polish: (transcript: string, provider: string, model: string, effort: string, sessionId: string, signal?: AbortSignal) => Promise<RemoteResult<string>>;
+        optimize: (text: string, provider: string, model: string, context: string, effort: string, sessionId: string, signal?: AbortSignal) => Promise<RemoteResult<string>>;
         templatesList: () => Promise<RemoteResult<{
             templates: TemplateWire[];
         }>>;
@@ -36,10 +37,11 @@ declare module '@deepseek-ai/dsh-typert-protocol' {
             efforts: readonly ReasoningEffortInfo[];
             defaultEffort?: string;
         }>>;
+        'betterInput/resolveAssistRoute': (feature: string, sessionId: string) => Promise<RemoteResult<AssistRouteView>>;
         'betterInput/getAbout': () => Promise<RemoteResult<AboutInfoWire>>;
         'betterInput/checkForUpdate': (signal?: AbortSignal) => Promise<RemoteResult<UpdateCheckResultWire>>;
-        'betterInput/polish': (transcript: string, provider: string, model: string, effort: string, signal?: AbortSignal) => Promise<RemoteResult<string>>;
-        'betterInput/optimize': (text: string, provider: string, model: string, context: string, effort: string, signal?: AbortSignal) => Promise<RemoteResult<string>>;
+        'betterInput/polish': (transcript: string, provider: string, model: string, effort: string, sessionId: string, signal?: AbortSignal) => Promise<RemoteResult<string>>;
+        'betterInput/optimize': (text: string, provider: string, model: string, context: string, effort: string, sessionId: string, signal?: AbortSignal) => Promise<RemoteResult<string>>;
         'betterInput/templatesList': () => Promise<RemoteResult<{
             templates: TemplateWire[];
         }>>;

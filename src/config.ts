@@ -127,9 +127,16 @@ export interface BetterInputSettings {
   polishReasoningEffort: string
   /** Custom polish system prompt, empty for the built-in one. */
   polishPrompt: string
-  /** Enable prompt optimization through the Host LLM. */
-  optimizeEnabled: boolean
-  /** Optimize with the model the composer currently has selected; see {@link BetterInputSettings.polishFollowInputModel}. */
+  /**
+   * Optimize with the model the composer currently has selected; see
+   * {@link BetterInputSettings.polishFollowInputModel}.
+   *
+   * Prompt optimization has **no** enable switch of its own: the ✨ button is a
+   * core capability and an on/off toggle would only add a way to hide it. An
+   * `optimizeEnabled` key used to sit here and was never read by anything — a
+   * setting that saves, round-trips and changes nothing (removed in
+   * `0.2.0-rc.2-sqs.4`).
+   */
   optimizeFollowInputModel: boolean
   /** dsh optimize provider id (reuses the same route pool as polish). */
   optimizeProvider: string
@@ -150,8 +157,15 @@ export interface BetterInputSettings {
  * one, otherwise the adapter's own default).
  * Both features follow the composer's model by default — the model the user
  * picked in the input box is the one they expect an assist to run on.
- * Provider/model stay empty and get auto-filled on first settings page
- * load via SettingsController (first route returned by listRoutes).
+ * Provider/model stay empty and are auto-filled on the first settings page
+ * load by `SettingsController` from **dsh's own agent default model**, never
+ * from `listRoutes()[0]` — see {@link resolveAutoRoute}.
+ *
+ * Every key here must also exist in `betterInputSettingsSchema` (and be
+ * patchable through `betterInputSettingsPatchSchema`); the gateway runs those
+ * schemas over the wire and a zod object **strips** what it does not declare,
+ * so a key missing there is silently dropped on the way in. Guard:
+ * `npm run check:routes`.
  */
 export const DEFAULT_SETTINGS: BetterInputSettings = Object.freeze({
   language: '',
@@ -165,7 +179,6 @@ export const DEFAULT_SETTINGS: BetterInputSettings = Object.freeze({
   polishModel: '',
   polishReasoningEffort: '',
   polishPrompt: '',
-  optimizeEnabled: true,
   optimizeFollowInputModel: true,
   optimizeProvider: '',
   optimizeModel: '',
@@ -237,6 +250,45 @@ export function resolveInputModelRoute(
   return { provider: configured.provider, model: configured.model, reasoningEffort: effort }
 }
 
+/**
+ * Pick the route first-launch auto-fill should store as the fallback.
+ *
+ * The fallback is what an assist calls when the composer's selection cannot be
+ * read, so it must be a model the *user* configured — and the obvious candidate,
+ * `listProviders()[0]`, is not that. `listProviders()` returns **registration
+ * order**: the base bundle activates `llm-deepseek-api-key` before pi-ai's
+ * configured providers, so the first entry is always `deepseek-official`. An
+ * earlier revision stored exactly that, which is why a user whose own route was
+ * a relay saw the plugin "pinned to the official key" and could not tell why:
+ * the pinned value is invisible while the rows follow the composer, and it only
+ * surfaces when the composer read fails.
+ *
+ * dsh's agent default model is the durable answer instead, and the returned
+ * route is validated against the live route list so the settings dropdown can
+ * actually display it. `routes[0]` remains the last resort, because storing
+ * *some* valid route beats storing none for a composition with no default-model
+ * service.
+ *
+ * @param defaultRoute - dsh's agent default model, `null` when unavailable.
+ * @param routes - every route the Host advertised, in Host order.
+ * @returns the route to store, or `null` when there is nothing to store.
+ */
+export function resolveAutoRoute(
+  defaultRoute: ComposerModelRoute | null,
+  routes: readonly { readonly provider: string; readonly model: string }[]
+): { readonly provider: string; readonly model: string } | null {
+  if (defaultRoute !== null) {
+    const provider = defaultRoute.provider.trim()
+    const model = defaultRoute.model.trim()
+    if (provider !== '' && model !== '') {
+      const hit = routes.find((route) => route.provider === provider && route.model === model)
+      if (hit !== undefined) return { provider: hit.provider, model: hit.model }
+    }
+  }
+  const first = routes[0]
+  return first === undefined ? null : { provider: first.provider, model: first.model }
+}
+
 /** One selectable reasoning effort tier for a specific model route. */
 export interface ReasoningEffortInfo {
   /** Stable id passed to `LlmCallConfig.reasoningEffort`. */
@@ -269,6 +321,15 @@ export interface BetterInputSettingsView {
   writable: boolean
   settings: BetterInputSettings
   overridden: string[]
+  /**
+   * dsh's own agent default model, or `null` when the optional
+   * `agentDefaultModel` service is not part of the composition.
+   *
+   * This is the durable answer to "which model did the user configure as
+   * theirs", and it is what first-launch route auto-fill must use — see
+   * {@link resolveAutoRoute}.
+   */
+  defaultRoute: ComposerModelRoute | null
   /** The built-in polish system prompt, shown in the settings page. */
   defaultPolishPrompt: string
   /** The built-in optimize system prompt, shown in the settings page. */

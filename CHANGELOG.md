@@ -7,6 +7,262 @@
 > **从未发布到 npm**。首次公开发布统一改名为 `sqs-dsh-better-input`，版本号自 `0.1.0` 起算，
 > 因此不再保留那些未发布的中间版本号。
 
+## [0.2.0-rc.2-sqs.4] - 2026-10-04
+
+对 `sqs.3` 的一次**复核修复**。`sqs.3` 引入的「Host 侧解析跟随」有两个致命缺陷，都能装、
+能启动、`npm run verify` 全绿，但在真实运行时**完全不生效**——本版把它们连同其余 10 项一起修掉。
+
+### 修复
+
+- **「跟随输入框模型」在 `sqs.3` 上其实没有生效（读错了投影字段）**。dsh 的 session controller
+  给 `modelSelection` 注册了**两套** schema：`stateOf()` 返回的 **state** 是
+  `{ lastUsed, pending }`，而 `snapshot()` / `faceOf()` 返回的 **client view** 才是
+  `{ lastUsed, next }`（`next = pending ?? lastUsed`，见
+  `dsh-api-session-controller/lib/types/model-selection-projection.js`）。`sqs.3` 的
+  `composerSelection()` 读的是 `stateOf(...).next` —— 恒为 `undefined`，于是
+  「输入框模型」这一路是**死代码**，永远回落到设置路由。后果比改动前更糟：`sqs.1` 至少还能用
+  浏览器快照跟随，`sqs.3` 把决策搬回 Host 却换成了读不到的那条通路。现在读
+  `state?.pending ?? state?.lastUsed`（与输入框渲染同源同优先级）。
+
+- **「静音自动停止」保存不上（patch 在 wire 边界被剥掉）**。`9e31ac8` 引入 `autoStopSeconds`
+  时就漏了把它加进两个 Typert wire schema，而网关对**入参**跑
+  `codec.create().parse(value)` 并把 parse 结果当真实参数（`dsh-api-gateway` 的 `decode()`），
+  zod 的 `z.object` 默认**剥离未声明键**：设置页发出去的
+  `{ autoStopSeconds: 7 }` 到 Host 时已经是空对象，`merge()` 什么都没写，而
+  `updateSettings` 仍然返回 `ok` —— 表现是「保存成功、刷新后弹回」。现在两个 schema 都补齐，
+  并在 `check:routes` 里加了**三方比对**与边界 parse 断言。
+
+- **✨ 按钮点不动（未处理的 Promise 拒绝）**。`OptimizeButton` 的路由解析不在 `try` 里，
+  RPC 以 rejection 结束时 `handleClick` 变成未处理的拒绝：没有错误提示、状态停在 `idle`，
+  看起来就是「点了没反应」。现在两个按钮都走同一个解析器（见下），它内部捕获，不再抛出。
+
+- **润色被静默跳过**。跟随开启但 Host 读不到会话选择时，`MicrophoneButton` 拿到空路由就直接
+  `setState('idle')`，一次语音输入就此无声丢失——而浏览器快照里明明有一个可用的输入框模型。
+  现在按「Host 优先、浏览器快照兜底」的顺序回退（与按钮可用性的判定同源）。
+
+- **跟随行会谎报跟随成功**。`source` 字段在 `sqs.3` 里被精心定义，客户端却**没有任何一处读它**，
+  跟随行一律渲染「自动跟随」。现在跟随行渲染的是 Host 解析出的**真实路由**，并按 `source`
+  区分徽标：跟随成立显示「自动跟随」，回落显示「未跟随，用下方配置」。设置页与按钮走同一个
+  `resolveAssistRoute()`，因此「行里显示什么」与「实际调用什么」不可能不一致。
+
+- **两个 JSON 文档的临时文件可能堆积**。设置文档的临时名带 `Date.now()`，写失败或被强杀时
+  每次都留下一个**新的** `.tmp`；模板文档虽然名字不含时间戳，也无失败清理。现在统一由
+  `src/atomic-write.ts` 处理：确定性命名（`<文件>.<pid>.tmp`）+ 失败时删除暂存文件。
+
+- **启动失败时麦克风不释放**。`MicrophoneCapture.start()` 在拿到 MediaStream **之后**才建
+  AudioContext 图；两次 `new AudioContext()` 都抛异常时错误直接逃出，而调用方只上报错误、
+  从不持有 capture 去 `dispose()` —— 浏览器的录音指示会一直亮着。现在所有「已拿到设备之后」
+  的失败路径都经过 `releaseDevice()`（停轨 + 清引用），建图被拒时走 `release()`。
+
+- **`package.json` 等工作区文件是 CRLF**：与 AGENTS「LF everywhere」不符，且会让下一次 git
+  触碰产生整文件重写的假 diff。已按 `.gitattributes` 归一为 LF。
+
+- **崩溃残留的暂存文件没人收（`SIGKILL` 场景）**。原子写的失败路径清理覆盖不到进程被杀的那一
+  刻：`writeFile` 与 `rename` 之间挨了 `SIGKILL`（或断电），暂存文件就留在了 dsh 的 home 里。
+  名字是确定性的，所以它**不会堆积**（下一次写原地覆盖），但会变成一个永远无主的文件。新增
+  `sweepStaleTemporaries()`：每份文档**首次 `load`** 时收一次，范围刻意收窄——只认
+  `<文档名>.<pid>.tmp`、只删非本进程 pid、且只删超过 10 分钟的，本进程的和正在写的绝不碰。
+  dsh 自己下载模型留下的 `*.part` 不归本插件管，不动（见 `docs/internals.md`）。
+
+### 移除
+
+- **`optimizeEnabled`**：一个**死设置**——在 `BetterInputSettings`、`DEFAULT_SETTINGS`、
+  `normalizeSettings` 和两个 wire schema 里都存在，但设置页没有开关、`OptimizeButton` 也不读它
+  （✨ 刻意 always-on）。它只能保存、往返、然后什么都不影响，故从类型、默认值、规范化与
+  wire schema 中一并删除。老文档里残留的该键会在下次读取时被正常丢弃。
+
+### 变更
+
+- **新增 `src/client/assist-route.ts`：浏览器侧唯一的「这次调用走哪个模型」决策点**。
+  ✨ 按钮、麦克风按钮、设置页跟随行三处共用：跟随开启时问 Host，Host 答不出（跟随关闭 /
+  选择不可读 / RPC 失败）时回落到浏览器快照里输入框显示的那个模型，两者都没有才算未配置。
+  它是纯函数（Remote 调用注入），因此 `check:routes` 可以用桩驱动**每一个分支**，而不是靠注释。
+- **`npm run check:routes` 从「源码里有这行字吗」升级为契约断言**：
+  - §1 扩成**四方一致**（`BetterInputSettings` / `DEFAULT_SETTINGS` / `normalizeSettings` /
+    两个 wire schema）并**真跑一遍边界 parse**（用当初被丢掉的 `autoStopSeconds` 作为输入）；
+  - §1c 新增原子写契约：成功不留暂存文件、暂存名确定性、陈旧暂存被复用、**失败必须删除暂存**、
+    **`SIGKILL` 残留由下次 `load` 的 `sweepStaleTemporaries()` 收走**（且本进程/在写/同名变体不碰）；
+  - §3b 新增 `createAudioContext` 的失败分支驱动（第二次构造也失败 → `undefined`，不再抛出）
+    与「已拿到设备后的每条失败路径都要归还设备」；
+  - §6 改为断言**具体表达式** `state?.pending ?? state?.lastUsed` 且 `state?.next` 必须不存在
+    （旧的断言只查 `stateOf(session, 'modelSelection')` 是否出现，所以读错字段照样 PASS——
+    这正是问题 1 穿过全套 `verify` 的原因）；
+  - §6b 新增共享解析器的 8 条行为断言（Host 优先、空答案回落、reject/refuse 回落、
+    `source` 如实上报、跟随关闭不发请求且用配置路由、effort 永不跟随输入框、feature 取各自设置）；
+  - §6c 新增 manifest 类型引用完整性断言（`defaultRoute: ComposerModelRoute | null` 曾引用一个
+    **未声明**的类型；loader 只校验 `name`/`declaration` 是非空字符串，不会解析引用）。
+- **manifest 补充类型声明**：`ComposerModelRoute`、`EffectiveModelRoute`、`BetterInputSettings`、
+  `ReasoningEffortInfo`（`PolishRoute` 的辅助接口拆成独立声明）。
+- **`resolveAssistRoute` 刻意不校验「composer 路由是否在 Host 路由表里」**：若输入框停在一个已
+  消失的路由上，调用会带着 provider 自己的报错信息失败（`finishFailure` 原样透传），而跟随行
+  仍显示输入框的模型；悄悄换成设置路由会重新制造「看起来对、其实不是」的那个 bug。
+
+### 说明
+
+- 复核方式：把 dsh 0.2.0-rc.2 的原始实现从 `app.asar` 解出后逐行对照
+  （`dsh-api-session-controller` 的投影 schema、`dsh-api-gateway` 的 `decode()`、
+  `dsh-typert-loader` 的校验），再在本机文件系统上取证；结论与证据记录在
+  [docs/internals.md](./docs/internals.md)。
+
+## [0.2.0-rc.2-sqs.3] - 2026-10-03
+
+本版修复 **切换模型卡界面 / 不再跟随输入框模型**，并把「跟随哪个模型」的决定权从浏览器移到
+Host。
+
+### 修复
+
+- **切换模型时界面卡住、且不再跟随输入框模型**。根因在 `src/client/composer-model.ts`：
+  `useCurrent()` 在**渲染期间**同步调用 `read()` → `entryFor(sessionId)` →
+  `dsh.modelDirectories.directoryFor(sessionId)`。而 dsh 的
+  `dsh-client-ui-model-selection` 对每个 Session binding 只维护**一个共享目录**
+  （`live.directories`，WeakMap 按 binding 键），**每一个**入口（模型弹窗、输入框的模型座、
+  以及本插件）都会为它登记一条作用域销毁副作用：
+
+  ```js
+  actx.effect(() => () => { directory.dispose(); live.directories.delete(binding) },
+              'ui-model-selection: session directory')
+  ```
+
+  即**任何一个作用域退出都会销毁所有其他订阅者仍在渲染的那个共享目录**。于是本插件在渲染
+  路径里重新 `directoryFor()` 一次，就会新建一个目录并再登记一条同样的销毁副作用 ——
+  这会让 dsh 自己的模型座丢掉订阅：输入框显示新模型，其余 UI 读不到，而插件继续跟踪
+  **上一个**模型。实测（脱离 dsh 的独立复现页 `evidence/composer-model-frozen.probe.html`）：
+  共享目录被另一作用域销毁后，模型切换发布在**新**目录上，界面的两行仍停在旧模型，目录被
+  创建了 2 次。修复后同场景（`evidence/composer-model-fixed.probe.html`）正确跟随，且不再
+  重建目录（`directories created=2` 时行已更新为 `minimax-m2.7`）。
+
+  现在 `entryFor()` 在目录已 `disposed` 时**只把缓存条目标记为孤儿**（保留最后一次已知值），
+  绝不在读取路径里新建目录；`read()` 因此不再有副作用。
+
+- **跟随行会显示一个「看起来对、其实不是」的模型**。`ModelDirectory.syncInputs()` 只有在
+  Host 模型目录 `ready` 时才写入 `current`：
+
+  ```js
+  if (catalog.status !== "ready" || catalog.value === null || projected === undefined) {
+    this.store.set({ current: catalog.value === null ? null : store.current, … })
+    return                       // ← current 保持未设置
+  }
+  store.set({ current: projected.next ?? catalog.value.default, … })
+  ```
+
+  所以活着的目录返回 `current: null` 只代表「还没就绪」，不代表「没有选择」。此前一个中间
+  版本把这种 `null` 当成未命中、退回 Host 目录的 `default`，实测在该 profile 上输入框显示
+  `DeepSeek-V41-Flash` 而跟随行显示 `deepseek-official / deepseek-flash`（目录 `default`
+  的原值，见 `evidence/composer-model-follow-probe.md`）。跟随行的存在意义就是让用户确认
+  「跟随真的生效」，显示一个错误但可信的模型比显示「未知」更糟。现在**活着的目录是权威
+  的（包括它回答 `null`）**，只有**取不到目录**时才退回 Host 目录的 `default`。
+
+### 变更
+
+- **「跟随输入框模型」改为在 Host 侧解析（新增 RPC `betterInput/resolveAssistRoute`）**。
+  浏览器持有的只是**渲染期快照**，其底层 store 在 model-selection 插件的 Host 目录就绪前
+  恒为 `null`；任何客户端兜底都只是「猜这次请求会记在哪个模型上」。Host 同时拥有两个输入
+  —— 自己读的设置文档，以及 session controller 投影出的会话选择 —— 所以由 Host 回答。
+
+  > ⚠️ 该版本读的是投影的 **client view** 字段 `next`，而 `stateOf()` 返回的是 **state**
+  > （`{ lastUsed, pending }`，`next` 只存在于 view schema），因此这一路当时恒为 `undefined`、
+  > 从未生效。已在 [`0.2.0-rc.2-sqs.4`](#020-rc2-sqs4---2026-10-04) 修正为
+  > `state?.pending ?? state?.lastUsed`。
+
+  两个 assist（`optimize` 点击时、`polish` 停止录音时）在跟随开启时改为 await 该 RPC；返回
+  值带 `source: 'composer' | 'settings' | 'none'`，可用于如实渲染跟随行。跟随关闭时仍走本地
+  设置路由，不发多余请求。**思考强度在任何分支下都只来自本功能自己的设置**，不跟随输入框
+  （此前的费用回归不回归）。未知的 `feature` 值直接报错，不会被当成其中任何一个。
+  （跟随行对 `source` 的实际消费同样在 `sqs.4` 补上。）
+
+- `npm run check:routes` 新增 8 条断言：目录销毁分支不得新建条目、活着的目录即使回答
+  `null` 也必须是权威、Host 侧 `resolveAssistRoute` 必须经共享的 `resolveInputModelRoute()`
+  决策、会话选择必须来自 session controller 投影、以及新 RPC 必须在**四处**齐备（契约、
+  两个 manifest、服务方法），并单独断言 manifest 的 `model.services[].members` 里也有它 ——
+  「四处缺一」正是当初模板库静默失效的形态。该断言已做反向验证（删掉成员项即 FAIL）。
+
+## [0.2.0-rc.2-sqs.2] - 2026-10-03
+
+本版修复两个用户报告的问题：**非官方（中转）路由下提示词优化/语音润色失败**，以及**插件数据
+目录不跟随 dsh 的家目录**。
+
+### 修复
+
+- **非官方路由上优化/润色必然失败（"一换模型就不能用，只有官方 API 能用"）**。dsh 的每个模型
+  请求都要经过 `llm/stream` 瀑布，而"需要按会话注入传输元数据"的 provider 从
+  `options.sessionId` 取值：OpenCode 中转在没有 `x-opencode-session` 头时直接回
+  HTTP 400 `MissingSessionID`。这个头是 **dsh 原生**行为，不需要任何插件：pi-ai 自带
+  `opencode` / `opencode-go` 两个 provider，二者的 API 面都包了
+  `withOpenCodeSessionHeader()`（`node_modules/@earendil-works/pi-ai/dist/providers/opencode-headers.js`），
+  把 `options.sessionId` 变成该头；`@deepseek-ai/dsh-llm-pi-ai` 复用这个 catalog provider
+  并把字段透传进 `streamSimple`。所以调用方唯一要做的事就是**把 id 递进去**。
+  本插件的两次辅助调用（`polish` / `optimize`）此前**不带 sessionId**，等于发出了"匿名请求"——
+  官方 DeepSeek 恰好接受，任何要求会话元数据的中转路由都会失败。dsh 自己的辅助调用
+  （`dsh-session-title-llm` 的 `request.session.id`、`dsh-compaction-basic` 的
+  `agent.session.id`）都会带上它，本插件现在也一样：两个 RPC 新增 `sessionId` 参数，取自
+  `conversation.input.right` 槽位的会话 id，在 `src/polish/assist-options.ts` 统一落到
+  `GenerateOptions.sessionId`（空值省略，而不是发一个空串头——空串是 falsy，
+  `withSessionHeader()` 的 `!options.sessionId` 判断同样会跳过注入，见下方实测）。
+
+  实测（劫持 `globalThis.fetch` 直读真实出站头，走 pi-ai 内置 `opencode-go` provider，
+  全程无任何插件参与，`https://opencode.ai/zen/go/v1/chat/completions`）：
+
+  | `options.sessionId` | 出站 `x-opencode-session` | 结果 |
+  |---|---|---|
+  | `'probe-native-session-abc'` | `probe-native-session-abc` | **HTTP 200** |
+  | 省略 | （缺失） | HTTP 400 `MissingSessionID` |
+  | `''`（空串） | （缺失） | HTTP 400 `MissingSessionID` |
+
+- **首次启动的默认路由把插件钉在官方 provider 上**。设置页的"首次启动自动补全"取的是
+  `listRoutes()[0]`，而 `ctx.llm.listProviders()` 返回的是**注册顺序**：base bundle 先激活
+  `llm-deepseek-api-key`，再激活 pi-ai 的配置路由，所以第一项恒为 `deepseek-official`
+  （实测 `["deepseek-official","deepseek-account","opencode-go"]`）。旧注释声称
+  "dsh 的 listRoutes() 把用户偏好的 provider 排在前面"，这是错的。被钉住的值在"跟随输入框"
+  打开时**根本不显示**（两行渲染的是输入框当前模型），只在读不到输入框模型时才生效，于是表现
+  为"插件锁死在官方 key 上、还改不动"。现在优先使用 dsh 自己的 agent 默认模型
+  （`ctx.agentDefaultModel.currentSelection()`，经 `getSettings()` 以 `defaultRoute` 字段下发），
+  并校验它确实在路由列表里；取不到才退回 `routes[0]`。实测同一组合：
+  `defaultRoute=opencode-go/deepseek-v4.1-flash`，`routes[0]=deepseek-official/deepseek-flash`。
+
+- **后端失败被吞掉，只剩一句无用提示**。dsh 把 provider/传输层错误规范化进终止 `finish` 块的
+  `failure`（人类可读 message + 机器码 + HTTP 状态）而不是抛出；此前 `collectText()` 只判断
+  `reason.kind`，于是 400 `MissingSessionID`、缺少凭据、路由真的坏掉三者都显示成
+  "The dsh LLM route did not complete optimization"，把用户引向插件而不是 provider。现在原样
+  转发 provider 的报错（有 HTTP 状态时附上），机器码放进 `LlmError.code`。
+
+- **插件自己的设置/模板文档不跟随 `$DSH_HOME`**。两个 store 用 `os.homedir()` 拼 `~/.dsh`，而
+  dsh 按"显式配置 > `$DSH_HOME` > `~/.dsh`"解析家目录。带显式 home 启动时（WSL/Windows 各一套
+  dsh 的组合正是如此），插件会把设置写到**另一个家目录**：读到的路由配置不是当前 dsh 正在用的
+  那份，表现为"插件锁死在官方 key 上、改了也不生效"。新增 `src/home.ts` 复刻 dsh 的解析规则
+  （不新增 peer），两个 store 改用它。
+
+### 新增
+
+- `npm run check:routes` 新增 11 条断言：辅助请求必须带会话戳（去掉 `assistStreamOptions()`
+  会失败 3 条）、`$DSH_HOME` 必须优先于 `~/.dsh`（退回 `homedir()` 会失败 3 条）、首次自动补全
+  必须优先 agent 默认模型而不是 `routes[0]`（退回会失败 4 条），以及两处 assist 必须经
+  `assistStreamOptions()` 构造请求（防"模块在、但没人调用"）。
+- 新增 `src/polish/assist-options.ts`（纯函数、只有被擦除的类型导入，便于守卫直接驱动）、
+  `src/home.ts`，以及 `resolveAutoRoute()`（`src/config.ts`）。
+- `BetterInputSettingsView` 新增 `defaultRoute` 字段（dsh 的 agent 默认模型，服务缺席时为
+  `null`），随 `getSettings` 一起下发。
+- 新增 `scripts/probe-opencode-session.mjs`：手动运行（需 key、需要网络，**不在 `npm run
+  verify` 里**），直连 pi-ai 内置 provider 并劫持 `fetch` 读出真实出站头，用来复现上面那张表。
+
+### 说明
+
+- **更正：`x-opencode-session` 是 dsh 原生能力，`dsh-opencode-session` 属于多余。**
+  早先的记录把该头的注入归给了第三方插件 `dsh-opencode-session`，这是错的。真相是 pi-ai 自带
+  `opencode` / `opencode-go` provider，其 API 面已被 `withOpenCodeSessionHeader()` 包裹，
+  再由 `@deepseek-ai/dsh-llm-pi-ai` 把 `options.sessionId` 透传进去。所以本插件的修复（把会话
+  id 递出去）本身就是完整修复，**不需要**任何第三方头插件。
+
+  端到端验证：用 `dsh --from-default-profile headless` 建一个只含
+  `["@deepseek-ai/dsh-base","@deepseek-ai/dsh-headless"]` 的全新 profile（没有任何第三方
+  bundle），仅把 `llm-pi-ai` 指向 `opencode-go` 并把 agent 默认模型设为
+  `opencode-go/deepseek-v4.1-flash`，然后 `dsh --profile hl "…"` —— **真实 agent 轮次正常完成**，
+  无 `MissingSessionID`。
+
+  唯一仍需头插件的形态是**手工声明的路由**：`dsh-llm-pi-ai` 的 `PROTOCOLS` 表用裸的
+  `openAICompletionsApi` / `anthropicMessagesApi` / `openAIResponsesApi` 构造这类 provider，
+  没有 OpenCode 包装层。按名字配置 catalog 路由 `opencode-go`（本机 profile 就是这种）走的是
+  原生路径，不受影响。
+
 ## [0.2.0-rc.2-sqs.1] - 2026-10-03
 
 **版本号规则**：在 `0.2.0-rc.2` 之后追加 `-sqs.N`，表示**仍适配 DSH `0.2.0-rc.2`**、

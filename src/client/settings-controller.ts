@@ -1,7 +1,8 @@
 import { useSyncExternalStore } from 'react'
-import { DEFAULT_SETTINGS, type BetterInputSettings, type BetterInputSettingsPatch, type BetterInputSettingsView, type PolishRoute, type ReasoningEffortInfo } from '../config.js'
+import { DEFAULT_SETTINGS, resolveAutoRoute, type BetterInputSettings, type BetterInputSettingsPatch, type BetterInputSettingsView, type ComposerModelRoute, type EffectiveModelRoute, type PolishRoute, type ReasoningEffortInfo } from '../config.js'
 import type { AboutInfoWire, SpeechStatusWire, UpdateCheckResultWire } from '../remote-contract.js'
 import type { BetterInputRemote } from '../remote.js'
+import { resolveAssistRoute, type AssistFeature, type AssistRouteSource } from './assist-route.js'
 
 export type SettingsStatus = 'loading' | 'ready' | 'error'
 
@@ -47,6 +48,19 @@ export type SpeechSnapshot = {
   readonly detail: string
 }
 
+/**
+ * What the Host resolved one assist's route to, for the settings page's follow
+ * row. `source` is the honest part: while "follow the composer" is on, an answer
+ * of `settings` means the Host could not read the Session's selection, and the
+ * row must say so instead of claiming the follow worked — see
+ * `src/client/assist-route.ts`.
+ */
+export type AssistRouteSnapshot = {
+  readonly status: 'idle' | 'loading' | 'ready'
+  readonly route: EffectiveModelRoute | null
+  readonly source: AssistRouteSource
+}
+
 const EMPTY_SPEECH: SpeechStatusWire = {
   service: false,
   available: false,
@@ -70,6 +84,7 @@ const EMPTY_VIEW: BetterInputSettingsView = {
   writable: false,
   settings: { ...DEFAULT_SETTINGS },
   overridden: [],
+  defaultRoute: null,
   defaultPolishPrompt: '',
   defaultOptimizePrompt: ''
 }
@@ -90,6 +105,10 @@ export class SettingsController {
   private aboutSnapshot: AboutSnapshot = { status: 'loading', about: EMPTY_ABOUT, detail: '' }
   private updateSnapshot: UpdateSnapshot = { status: 'idle', update: null, detail: '' }
   private speechSnapshot: SpeechSnapshot = { status: 'loading', view: EMPTY_SPEECH, preparing: false, detail: '' }
+  private readonly assistRoutes = new Map<AssistFeature, AssistRouteSnapshot>()
+  /** Monotonic per feature, so a slow answer cannot overwrite a newer one. */
+  private readonly assistRouteRequest = new Map<AssistFeature, number>()
+  private assistRoutesSnapshot: Readonly<Record<string, AssistRouteSnapshot>> = {}
   private readonly listeners = new Set<Listener>()
   private disposed = false
 
@@ -107,6 +126,8 @@ export class SettingsController {
 
   readonly getSpeechSnapshot = (): SpeechSnapshot => this.speechSnapshot
 
+  readonly getAssistRoutesSnapshot = (): Readonly<Record<string, AssistRouteSnapshot>> => this.assistRoutesSnapshot
+
   readonly subscribe = (listener: Listener): (() => void) => {
     this.listeners.add(listener)
     return () => this.listeners.delete(listener)
@@ -121,11 +142,11 @@ export class SettingsController {
       this.settingsSnapshot = { status: 'ready', view: result.value, detail: '' }
       // Best-effort "first launch" default model pick: if the profile store
       // still carries the empty-string defaults (no model ever chosen in
-      // BetterInput), wait a tick for routes and auto-pick the first one
-      // available in the dsh registry as the default for polish + optimize.
-      // This roughly matches "use the user's primary configured model"
-      // because dsh's listRoutes() keeps user-favorite providers first.
-      void this.autoPopulateDefaultRoutesIfNeeded(result.value.settings)
+      // BetterInput), fill them from dsh's own agent default model — the model
+      // the user actually configured — once routes are known. See
+      // `resolveAutoRoute` for why `listRoutes()[0]` must never be the primary
+      // source: it is registration order, i.e. `deepseek-official`.
+      void this.autoPopulateDefaultRoutesIfNeeded(result.value)
     }
     this.emit()
   }
@@ -201,13 +222,14 @@ export class SettingsController {
       this.routesSnapshot = { status: 'ready', routes: result.value, detail: '' }
       // Settings may have arrived before routes; re-check autopopulate now.
       if (this.settingsSnapshot.status === 'ready') {
-        void this.autoPopulateDefaultRoutesIfNeeded(this.settingsSnapshot.view.settings)
+        void this.autoPopulateDefaultRoutesIfNeeded(this.settingsSnapshot.view)
       }
     }
     this.emit()
   }
 
-  private readonly autoPopulateDefaultRoutesIfNeeded = async (settings: BetterInputSettings): Promise<void> => {
+  private readonly autoPopulateDefaultRoutesIfNeeded = async (view: BetterInputSettingsView): Promise<void> => {
+    const settings = view.settings
     const polishEmpty = settings.polishProvider === '' || settings.polishModel === ''
     const optimizeEmpty = settings.optimizeProvider === '' || settings.optimizeModel === ''
     if (!polishEmpty && !optimizeEmpty) return
@@ -223,8 +245,8 @@ export class SettingsController {
         return rs.value
       })()
 
-    const first = routes[0]
-    if (first === undefined) return
+    const first = resolveAutoRoute(view.defaultRoute, routes)
+    if (first === null) return
 
     const patch: BetterInputSettingsPatch = {}
     if (polishEmpty) {
@@ -286,6 +308,52 @@ export class SettingsController {
         [key]: { status: 'error', efforts: [], detail: error instanceof Error ? error.message : String(error) }
       }
     }
+    this.emit()
+  }
+
+  /**
+   * Resolve one assist's route the same way its button will, for the follow row.
+   *
+   * Deliberately uncached and always re-asked: the answer depends on the
+   * composer's selection, on the Session, and on two settings keys, and a stale
+   * row is precisely the failure this exists to prevent. A per-feature request
+   * sequence drops an out-of-order answer (the user can flip the toggle faster
+   * than the RPC settles).
+   *
+   * @param feature - `'polish'` or `'optimize'`.
+   * @param sessionId - the Session the composer is showing; `''` when unknown.
+   * @param composer - the composer's selection as the browser sees it.
+   */
+  async refreshAssistRoute(feature: AssistFeature, sessionId: string, composer: ComposerModelRoute | null): Promise<void> {
+    if (this.disposed) return
+    const request = (this.assistRouteRequest.get(feature) ?? 0) + 1
+    this.assistRouteRequest.set(feature, request)
+    const previous = this.assistRoutes.get(feature)
+    this.publishAssistRoute(feature, {
+      status: 'loading',
+      route: previous?.route ?? null,
+      source: previous?.source ?? 'none'
+    })
+
+    const settings = this.settingsSnapshot.status === 'ready' ? this.settingsSnapshot.view.settings : null
+    let next: AssistRouteSnapshot
+    try {
+      const resolved = await resolveAssistRoute(this.remote, settings, feature, sessionId, composer)
+      next = { status: 'ready', route: resolved?.route ?? null, source: resolved?.source ?? 'none' }
+    } catch {
+      // `resolveAssistRoute` handles its own failures; this only guarantees the
+      // row can never be stuck in `loading` if that ever regresses.
+      next = { status: 'ready', route: null, source: 'none' }
+    }
+    if (this.disposed || this.assistRouteRequest.get(feature) !== request) return
+    this.publishAssistRoute(feature, next)
+  }
+
+  private publishAssistRoute(feature: AssistFeature, snapshot: AssistRouteSnapshot): void {
+    this.assistRoutes.set(feature, snapshot)
+    const record: Record<string, AssistRouteSnapshot> = {}
+    for (const [key, value] of this.assistRoutes) record[key] = value
+    this.assistRoutesSnapshot = record
     this.emit()
   }
 
@@ -352,4 +420,9 @@ export function useUpdateSnapshot(controller: SettingsController): UpdateSnapsho
 
 export function useSpeechSnapshot(controller: SettingsController): SpeechSnapshot {
   return useSyncExternalStore(controller.subscribe, controller.getSpeechSnapshot, controller.getSpeechSnapshot)
+}
+
+/** Per-feature Host-resolved assist routes, keyed by `'polish'` / `'optimize'`. */
+export function useAssistRoutesSnapshot(controller: SettingsController): Readonly<Record<string, AssistRouteSnapshot>> {
+  return useSyncExternalStore(controller.subscribe, controller.getAssistRoutesSnapshot, controller.getAssistRoutesSnapshot)
 }

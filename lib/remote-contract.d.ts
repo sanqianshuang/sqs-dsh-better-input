@@ -1,18 +1,31 @@
 import { z } from 'zod';
 export declare const textSchema: z.ZodString;
 export declare const booleanSchema: z.ZodOptional<z.ZodBoolean>;
+/**
+ * The settings document, as it crosses the wire.
+ *
+ * **Every** key of `BetterInputSettings` must appear here, and every key must
+ * also be patchable below. The gateway runs these schemas over incoming
+ * arguments (`decode()` → `codec.create().parse(value)`) and passes the *parsed
+ * result* to the service, and a zod object **strips** undeclared keys — so a
+ * setting missing from `betterInputSettingsPatchSchema` is silently dropped on
+ * its way into `updateSettings`. The RPC still answers `ok`, the local draft is
+ * cleared as if it saved, and the value reverts on the next read. That is
+ * exactly how `autoStopSeconds` was lost (fixed in `0.2.0-rc.2-sqs.4`). Guard:
+ * `npm run check:routes` (§1) compares all three lists.
+ */
 export declare const betterInputSettingsSchema: z.ZodObject<{
     language: z.ZodString;
     maxRecordingSeconds: z.ZodNumber;
     streamingPreview: z.ZodBoolean;
     segmentSeconds: z.ZodNumber;
+    autoStopSeconds: z.ZodNumber;
     polishingEnabled: z.ZodBoolean;
     polishFollowInputModel: z.ZodBoolean;
     polishProvider: z.ZodString;
     polishModel: z.ZodString;
     polishReasoningEffort: z.ZodString;
     polishPrompt: z.ZodString;
-    optimizeEnabled: z.ZodBoolean;
     optimizeFollowInputModel: z.ZodBoolean;
     optimizeProvider: z.ZodString;
     optimizeModel: z.ZodString;
@@ -25,13 +38,13 @@ export declare const betterInputSettingsPatchSchema: z.ZodObject<{
     maxRecordingSeconds: z.ZodOptional<z.ZodNumber>;
     streamingPreview: z.ZodOptional<z.ZodBoolean>;
     segmentSeconds: z.ZodOptional<z.ZodNumber>;
+    autoStopSeconds: z.ZodOptional<z.ZodNumber>;
     polishingEnabled: z.ZodOptional<z.ZodBoolean>;
     polishFollowInputModel: z.ZodOptional<z.ZodBoolean>;
     polishProvider: z.ZodOptional<z.ZodString>;
     polishModel: z.ZodOptional<z.ZodString>;
     polishReasoningEffort: z.ZodOptional<z.ZodString>;
     polishPrompt: z.ZodOptional<z.ZodString>;
-    optimizeEnabled: z.ZodOptional<z.ZodBoolean>;
     optimizeFollowInputModel: z.ZodOptional<z.ZodBoolean>;
     optimizeProvider: z.ZodOptional<z.ZodString>;
     optimizeModel: z.ZodOptional<z.ZodString>;
@@ -47,13 +60,13 @@ export declare const betterInputSettingsViewSchema: z.ZodObject<{
         maxRecordingSeconds: z.ZodNumber;
         streamingPreview: z.ZodBoolean;
         segmentSeconds: z.ZodNumber;
+        autoStopSeconds: z.ZodNumber;
         polishingEnabled: z.ZodBoolean;
         polishFollowInputModel: z.ZodBoolean;
         polishProvider: z.ZodString;
         polishModel: z.ZodString;
         polishReasoningEffort: z.ZodString;
         polishPrompt: z.ZodString;
-        optimizeEnabled: z.ZodBoolean;
         optimizeFollowInputModel: z.ZodBoolean;
         optimizeProvider: z.ZodString;
         optimizeModel: z.ZodString;
@@ -62,6 +75,10 @@ export declare const betterInputSettingsViewSchema: z.ZodObject<{
         contextTurns: z.ZodNumber;
     }, z.core.$strip>;
     overridden: z.ZodArray<z.ZodString>;
+    defaultRoute: z.ZodNullable<z.ZodObject<{
+        provider: z.ZodString;
+        model: z.ZodString;
+    }, z.core.$strip>>;
     defaultPolishPrompt: z.ZodString;
     defaultOptimizePrompt: z.ZodString;
 }, z.core.$strip>;
@@ -77,6 +94,33 @@ export declare const resolveModelEffortsResultSchema: z.ZodObject<{
         description: z.ZodOptional<z.ZodString>;
     }, z.core.$strip>>;
     defaultEffort: z.ZodOptional<z.ZodString>;
+}, z.core.$strip>;
+/**
+ * The route an assist will actually call, resolved on the **Host**.
+ *
+ * `source` records which input won, so the browser can render an honest follow
+ * row and a failure can be attributed instead of guessed at:
+ *
+ *   - `composer` — the Session's live model selection.
+ *   - `settings` — the route configured for the feature (follow is off, or the
+ *     composer's selection is genuinely unavailable).
+ *   - `none`     — neither side named a usable route.
+ *
+ * The Host answers this because it owns both inputs: the settings document it
+ * reads itself, and the Session's selection, which reaches it through the
+ * session controller. The browser's own copy of the composer selection is a
+ * render-time snapshot (see `src/client/composer-model.ts`) and must never be
+ * the last word on which model a request is billed to.
+ */
+export declare const assistRouteViewSchema: z.ZodObject<{
+    provider: z.ZodString;
+    model: z.ZodString;
+    reasoningEffort: z.ZodString;
+    source: z.ZodEnum<{
+        settings: "settings";
+        composer: "composer";
+        none: "none";
+    }>;
 }, z.core.$strip>;
 export declare const polishRouteSchema: z.ZodObject<{
     provider: z.ZodString;
@@ -220,6 +264,7 @@ export type BetterInputSettingsViewWire = z.infer<typeof betterInputSettingsView
 export type PolishRouteWire = z.infer<typeof polishRouteSchema>;
 export type ReasoningEffortWire = z.infer<typeof reasoningEffortSchema>;
 export type ResolveModelEffortsResultWire = z.infer<typeof resolveModelEffortsResultSchema>;
+export type AssistRouteView = z.infer<typeof assistRouteViewSchema>;
 export type SpeechTranscriptWire = z.infer<typeof speechTranscriptSchema>;
 export type SpeechStatusWire = z.infer<typeof speechStatusSchema>;
 export type SpeechProviderStatusWire = z.infer<typeof speechProviderStatusSchema>;
