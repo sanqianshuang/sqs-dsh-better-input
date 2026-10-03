@@ -9,6 +9,7 @@ export type BetterInputStrings = {
   voiceStop: string
   voiceBusy: string
   voicePermissionDenied: string
+  voiceNoDevice: string
   voiceCaptureUnavailable: string
   listening: string
   voiceCancel: string
@@ -45,9 +46,15 @@ export type BetterInputStrings = {
   polishHint: string
   on: string
   off: string
+  polishFollowLabel: string
+  polishFollowHint: string
   polishModelLabel: string
   polishModelHint: string
   polishModelNone: string
+  /** Shown in place of the model row while the feature follows the composer. */
+  followModelBadge: string
+  /** Shown when the composer's selection cannot be read (optional service absent). */
+  followModelUnknown: string
   polishEffortLabel: string
   polishEffortHint: string
   polishPromptLabel: string
@@ -71,6 +78,8 @@ export type BetterInputStrings = {
   optimizeCancel: string
   optimizeNotConfigured: string
   optimizeSectionLabel: string
+  optimizeFollowLabel: string
+  optimizeFollowHint: string
   optimizeModelLabel: string
   optimizeModelHint: string
   optimizeEffortLabel: string
@@ -123,6 +132,7 @@ export const zh: BetterInputStrings = {
   voiceStop: '停止语音输入',
   voiceBusy: '正在处理…',
   voicePermissionDenied: '麦克风权限被拒绝',
+  voiceNoDevice: '未检测到可用的麦克风设备，请先接入麦克风后重试',
   voiceCaptureUnavailable: '无法访问麦克风（需要 HTTPS 或 localhost）',
   listening: '正在聆听…',
   voiceCancel: '取消',
@@ -159,11 +169,15 @@ export const zh: BetterInputStrings = {
   polishHint: '识别完成后用大模型清理转写文本（去口头禅、修正同音错字、加标点）。',
   on: '开',
   off: '关',
+  polishFollowLabel: '跟随输入框所选模型',
+  polishFollowHint: '开启后，润色使用输入框当前选中的模型，切换模型即时生效；思考强度由下面的「润色思考强度」独立控制，不跟随输入框。下方润色模型仅在关闭此项、或无法读取输入框模型时生效。',
   polishModelLabel: '润色模型',
-  polishModelHint: '选择 dsh 中已配置的模型路由。',
+  polishModelHint: '「跟随输入框所选模型」关闭时使用的模型路由。',
   polishModelNone: '（未选择）',
+  followModelBadge: '自动跟随',
+  followModelUnknown: '未读取到输入框模型（跟随不可用时回退到下方配置）',
   polishEffortLabel: '润色思考强度',
-  polishEffortHint: '控制大模型的推理深度。默认即适配器最低档，适合大多数场景。',
+  polishEffortHint: '控制润色的推理深度，与输入框的思考强度无关（提高它会增加费用）。「默认」即关闭思考，适合大多数场景。',
   polishPromptLabel: '自定义润色提示词',
   polishPromptHint: '留空使用内置提示词。自定义提示词总是追加输出契约保护。',
   polishPromptPlaceholder: '可选：粘贴自定义提示词…',
@@ -185,10 +199,12 @@ export const zh: BetterInputStrings = {
   optimizeCancel: '取消',
   optimizeNotConfigured: '未配置优化模型，请在设置页开启',
   optimizeSectionLabel: '提示词优化',
+  optimizeFollowLabel: '跟随输入框所选模型',
+  optimizeFollowHint: '开启后，提示词优化使用输入框当前选中的模型，切换模型即时生效；思考强度由下面的「优化思考强度」独立控制，不跟随输入框。下方优化模型仅在关闭此项、或无法读取输入框模型时生效。',
   optimizeModelLabel: '优化模型',
-  optimizeModelHint: '选择 dsh 中已配置的模型路由。',
+  optimizeModelHint: '「跟随输入框所选模型」关闭时使用的模型路由。',
   optimizeEffortLabel: '优化思考强度',
-  optimizeEffortHint: '控制大模型的推理深度。默认即适配器最低档，适合大多数场景。',
+  optimizeEffortHint: '控制提示词优化的推理深度，与输入框的思考强度无关（提高它会增加费用）。「默认」即关闭思考，适合大多数场景。',
   optimizePromptLabel: '自定义优化提示词',
   optimizePromptHint: '留空使用内置提示词。自定义提示词总是追加输出契约保护。',
   optimizePromptPlaceholder: '可选：粘贴自定义提示词…',
@@ -237,6 +253,7 @@ export const en: BetterInputStrings = {
   voiceStop: 'Stop voice input',
   voiceBusy: 'Processing…',
   voicePermissionDenied: 'Microphone permission was denied',
+  voiceNoDevice: 'No microphone was found — connect one and try again',
   voiceCaptureUnavailable: 'Cannot access the microphone (HTTPS or localhost required)',
   listening: 'Listening…',
   voiceCancel: 'Cancel',
@@ -273,11 +290,15 @@ export const en: BetterInputStrings = {
   polishHint: 'Clean the transcript with an LLM after recognition (fillers, homophone fixes, punctuation).',
   on: 'On',
   off: 'Off',
+  polishFollowLabel: 'Follow the composer model',
+  polishFollowHint: 'When on, polishing runs on the model currently selected in the input box — switching models takes effect immediately. The thinking effort is set independently by "Polishing thinking effort" below and does not follow the input box. The polish model below applies only while this is off, or when the composer selection cannot be read.',
   polishModelLabel: 'Polish model',
-  polishModelHint: 'Pick a model route already configured in dsh.',
+  polishModelHint: 'Model route used when "follow the composer model" is off.',
   polishModelNone: '(none)',
+  followModelBadge: 'Following the input box',
+  followModelUnknown: 'Composer model unavailable — falling back to the route below',
   polishEffortLabel: 'Polishing thinking effort',
-  polishEffortHint: 'Controls the model inference depth. Default uses the adapter baseline (lightest tier).',
+  polishEffortHint: 'Controls how deeply polishing thinks, independent of the input box effort (raising it costs more). Default means thinking off, which suits most cases.',
   polishPromptLabel: 'Custom polish prompt',
   polishPromptHint: 'Empty uses the built-in prompt. A custom prompt always keeps the output-contract guard.',
   polishPromptPlaceholder: 'Optional: paste a custom prompt…',
@@ -299,10 +320,12 @@ export const en: BetterInputStrings = {
   optimizeCancel: 'Cancel',
   optimizeNotConfigured: 'No optimize model configured, enable it in Settings',
   optimizeSectionLabel: 'Prompt optimization',
+  optimizeFollowLabel: 'Follow the composer model',
+  optimizeFollowHint: 'When on, prompt optimization runs on the model currently selected in the input box — switching models takes effect immediately. The thinking effort is set independently by "Optimize thinking effort" below and does not follow the input box. The optimize model below applies only while this is off, or when the composer selection cannot be read.',
   optimizeModelLabel: 'Optimize model',
-  optimizeModelHint: 'Pick a model route already configured in dsh.',
+  optimizeModelHint: 'Model route used when "follow the composer model" is off.',
   optimizeEffortLabel: 'Optimize thinking effort',
-  optimizeEffortHint: 'Controls the model inference depth. Default uses the adapter baseline (lightest tier).',
+  optimizeEffortHint: 'Controls how deeply prompt optimization thinks, independent of the input box effort (raising it costs more). Default means thinking off, which suits most cases.',
   optimizePromptLabel: 'Custom optimize prompt',
   optimizePromptHint: 'Empty uses the built-in prompt. A custom prompt always keeps the output-contract guard.',
   optimizePromptPlaceholder: 'Optional: paste a custom prompt…',

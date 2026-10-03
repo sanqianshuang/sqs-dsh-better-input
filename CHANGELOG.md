@@ -7,6 +7,41 @@
 > **从未发布到 npm**。首次公开发布统一改名为 `sqs-dsh-better-input`，版本号自 `0.1.0` 起算，
 > 因此不再保留那些未发布的中间版本号。
 
+## [0.2.0-rc.2-sqs.1] - 2026-10-03
+
+**版本号规则**：在 `0.2.0-rc.2` 之后追加 `-sqs.N`，表示**仍适配 DSH `0.2.0-rc.2`**、
+由本仓库自行发布的第 N 次修订。DSH 主线版本不变时前面那段不再改动，所以版本号仍能一眼
+读出"该配哪一版 DSH"；同时每次重新发布都有唯一的 npm 版本号（npm 不允许覆盖已发布版本）。
+
+本版修复两个用户报告的问题。
+
+### 修复
+
+- **思考强度不再跟着输入框的模型走**（费用问题）。上一版引入"润色 / 提示词优化跟随输入框
+  当前模型"时，把**思考强度也一并跟随**了。输入框把"模型 · 档位"作为一个整体展示，
+  于是对话里选的高档位会被**按次**计费到每一次录音润色和每一次 ✨ 上；更糟的是跟随时
+  原来的强度下拉框被整个隐藏，插件侧没有能把它调回去的控件。
+  现在**只跟随模型，不跟随思考强度**：`ComposerModelRoute` 去掉 `reasoningEffort` 字段，
+  `resolveInputModelRoute()` 在任何分支下都只从本功能自己的设置读档位；两个强度下拉框
+  **始终显示且可编辑**，跟随时从"输入框当前模型"枚举档位 —— `resolveEffortConfig()` 是拿
+  **实际要跑的模型**校验档位的，枚举错模型会给出后端不认的选项。
+
+- **语音输入不再出现两个麦克风**。dsh 自带的麦克风在 `conversation.input.activity`，
+  本插件在 `conversation.input.right` —— 槽不同所以"不冲突"，但功能完全重叠：两个按钮
+  跑的是同一个本地识别器，界面上没有任何东西能区分它们。现在本插件激活时**接管**
+  `conversation.input.activity`，dsh 自己的麦克风不再渲染；插件停用后原生按钮自动回来。
+  接管依赖两条不直观的注册表规则（升序 priority 取第一个、该槽在本插件 `apply()` 时
+  尚未声明），以及"`inject` 必须返回对象"这一条会**静默失效**的约束，全部记在
+  `AGENTS.md` 的「Native voice input」小节。
+
+### 新增
+
+- `npm run check:routes` 新增 5 条断言：思考强度必须与输入框模型解耦（把档位重新绑回
+  输入框会失败 3 条），`conversation.input.activity` 的接管优先级必须低于原生条目
+  （改成 `0` 会失败 1 条）。
+- 新增 `src/client/composer-model.ts`（读输入框当前模型）、`src/client/native-voice-seat.ts`
+  （接管原生麦克风槽位）与 `scripts/check-input-routes.ts`（上述守卫）。
+
 ## [0.2.0-rc.2] - 2026-09-30
 
 **版本号与所适配的 DSH 主线同号**：本版专门适配 DSH **`0.2.0-rc.2`**，插件版本号即取该号，
@@ -88,6 +123,112 @@
 
 ### 修复
 
+- **提示词优化 / 润色把输入框的思考强度一起继承了，导致费用大幅增加**。
+  现象：把输入框的思考档位调高之后，语音润色与 ✨ 提示词优化也跟着变贵；
+  用户以为「思考模式」是自己单独关掉过的，而设置页里**根本没有这个开关**。
+  根因：上一版做「跟随输入框所选模型」时，把**思考强度也绑在了模型上**
+  （`ComposerModelRoute.reasoningEffort` → `resolveInputModelRoute` 跟随分支直接返回它），
+  于是输入框显示「模型 · 档位」这一个整体，润色/优化就照单全收——
+  用户在对话里选的高档位，会**按次**计费到每一次录音和每一次 ✨ 上，
+  而插件侧没有任何能把它调回去的控件（跟随开启时，原来的强度下拉框还被整个隐藏了）。
+  修复：**只跟随模型，不跟随思考强度**。`ComposerModelRoute` 去掉 `reasoningEffort`
+  字段，`resolveInputModelRoute()` 在任何分支都只从本功能的设置读档位；
+  设置页的两个强度下拉框改为**始终显示**（跟随时也能改），
+  并且在跟随时从「输入框当前模型」枚举档位——
+  因为 Host 的 `resolveEffortConfig()` 是拿**实际要跑的那个模型**去校验档位的，
+  枚举错模型会给出后端根本不认的选项。
+  默认仍是空串 = 插件自己的「关闭思考」（模型有 `off` 档就发 `off`，否则不发该字段）。
+  防复发：`check:routes` 新增两条断言，钉死「档位只来自本功能设置」与
+  「模型回退时档位不变」；负向对照（把档位重新绑回输入框）按预期失败 3 条。
+  验证：活体 GUI 上「Polishing/Optimize thinking effort」在「Follow the composer model」
+  开启时可见可选，文案明确写出「independent of the input box effort (raising it costs more)」。
+
+- **装了本插件后，输入框右侧出现两个麦克风**。
+  现象：dsh 自带的语音按钮（`Start recording`）与本插件的语音按钮
+  （`Voice input`）并排出现，两个都走同一套本地 SenseVoice 识别，用户无法分辨该点哪个。
+  根因：这不是回归，而是**刻意设计**留下的重复——dsh 自己的麦克风注册在
+  `conversation.input.activity`，本插件注册在 `conversation.input.right`，
+  两个槽不同所以「不冲突」，早先的说明文档也据此认为可以两个都开。
+  但功能上是重叠的。
+  修复：本插件激活时**接管** `conversation.input.activity` 这个座位，让原生按钮不再渲染。
+  该槽在 dsh 里声明为 **`kind: 'single'`**，每个 priority 只能有一个注册者，
+  而 `entriesOfSlot()` 取**升序 priority 的第一个**，因此按 `priority: -1` 注册即可遮蔽
+  默认优先级 0 的原生条目；本插件卸载时遮蔽条目随之离开账本，原生按钮自动回来。
+  踩到的两个坑（都已在源码注释里写明）：
+  1. **必须用 `slots.inject(key, cb)` 等待声明**。该槽由 `dsh-client-ui-conversation`
+     在 `slots.inject('main', …)` 里逐层声明（`main` → `conversation.composer.bar` →
+     `conversation.input.activity`），apply 时**还不存在**；直接 `slots.register` 会抛
+     `slot "…" is not declared`，而 `catch` 把它降级成一句 `console.warn`，
+     表面上「代码完全正确」但账本里只有原生那条。
+  2. **`inject` 必须返回对象，不能返回 `undefined`**。出口会把每个条目的 inject 面
+     送进 `bindInjectSources()`，它先读 `face["hooks"]` 再判断有没有可绑定的 hook；
+     返回 `undefined` 会抛 `TypeError: Cannot read properties of undefined (reading 'hooks')`，
+     而条目边界的错误处理会**把该条目 abdicate 掉**（从它的 cell 里除名）——
+     遮蔽静默失效。改成返回 `{}` 后正常。组件也必须渲染真实元素（空 `Fragment`）而不是 `null`。
+  诊断方法值得记一笔：这条错误**不进 console 的普通回看**，
+  要在 `Page.addScriptToEvaluateOnNewDocument` 里先挂钩 `console.error`
+  再 reload 才能拿到；只看最终 DOM 只会看到「两个麦克风」这个表象。
+  防复发：`check:routes` 新增三条断言（priority 必须为负、槽名必须正确、客户端入口必须真的挂载）；
+  负向对照（把 priority 改成 0）按预期失败。
+  验证：活体 GUI 上 `conversation.input.activity` 子节点数由 1 变 0，
+  `Start recording` 按钮消失，全页麦克风按钮计数由 2 变 1。
+
+- **提示词模板库整个不可用：Host 端三个 RPC 方法从未实现（严重）**。
+  设置页「提示词模板」显示
+  `模板加载失败: typert gateway: betterInput/templatesList: active Service "BetterInputPolish" has no callable method "templatesList"`。
+  根因：模板库的**客户端**（设置区块、`/` 触发器、`TemplatesController`）、
+  **RPC 契约**（`remote-contract.ts` 里的三个 zod schema）、**双端 Typert 清单**
+  （`typert.ts` 的 `invocations` + `model.services[].members`、`remote.ts`）
+  以及 **Host 端存储**（`TemplateStore`）全部就位，
+  **唯独 `BetterInputPolishService` 上没有 `templatesList` / `templatesSave` /
+  `templatesRemove` 三个方法**（`src/polish/service.ts` 里连 `TemplateInputWire` /
+  `TemplateWire` 两个类型导入都还在，实现显然漏掉了）。
+  这类漏法对既有检查完全隐形：`tsc` 看不到（清单只是普通对象），
+  Typert 校验器也看不到（它从不调用方法），于是"清单检查全过、插件正常激活"，
+  直到用户点开设置才失败——Typert 网关派发时执行
+  `Reflect.get(service, descriptor.method)`，拿不到可调用方法即抛
+  `gateway/method-unavailable`。
+  修复：在 `BetterInputPolishService` 上补上三个方法（`src/polish/service.ts`），
+  经 `TemplateStore` 读写 `~/.dsh/sqs-dsh-better-input/templates.json`。
+  关键点：返回值按 `toTemplateWire()` 显式投影，**任何字段都不能是显式 `undefined`**
+  （网关在 zod 校验通过之后还有一道 JSON-safe 边界检查会拒掉），
+  `readonly string[]` 要复制成可变数组，可选入参按"缺省即省略"构造。
+  防复发：`check:typert` 新增「实现一致性」断言，逐个 `direct` invocation
+  到 `src/` 里对应服务类的源码核对方法确实存在；已做正反两组对照
+  （缺方法时以同一条错误信息失败）。
+  验证：在一次性 profile 里用真实 `typertGateway.invoke()` 走完整派发链，
+  修复前复现出与截图逐字相同的报错，修复后
+  `{before:0} → save → {listed:1} → remove → {after:0}` 全部通过。
+
+- **润色 / 提示词优化不跟随输入框所选模型**。
+  现象：在输入框里换模型（含 `/model`）后，✨ 提示词优化与语音润色仍在调用设置页里固定的
+  「润色模型 / 优化模型」，用户以为会跟着走。
+  根因：**"跟随"这条链路根本不存在**。浏览器端直接把设置里的
+  `polishProvider` / `polishModel`（`src/client/MicrophoneButton.tsx`）与
+  `optimizeProvider` / `optimizeModel`（`src/client/OptimizeButton.tsx`）当作参数发给 Host，
+  而 Host 的 `polish` / `optimize` 只接受调用方给的路由、从不读取当前会话的模型，
+  于是那两个下拉框是唯一来源——换输入框模型对它们没有任何影响。
+  修复：新增 `src/client/composer-model.ts`，惰性读取 dsh 自己的模型选择服务
+  `ctx.modelDirectories.directoryFor(sessionId).store`（`pending` 优先于 `current`，
+  因此刚切换、尚未落盘的选择也立刻生效），并交给新的纯函数
+  `resolveInputModelRoute()` 与设置页路由一起决策；新增设置项
+  `polishFollowInputModel` / `optimizeFollowInputModel`（默认**开**，旧 `settings.json`
+  读取时自动补齐），开启时两个「模型 / 思考强度」下拉框置灰，
+  仅在该项关闭、或读不到输入框模型（未装模型选择插件、会话尚未有选择）时作为回退。
+  关键点：**思考强度必须跟着模型一起走**——在旧模型上选的档位在新模型上可能不存在，
+  适配器会因此直接拒绝整次调用。为此 `polish` / `optimize` 新增 `effort` 入参
+  （四处锁步：`src/remote.ts` 客户端面、`src/typert.ts` Host 清单、
+  `TYPERT.model.services[].members` 签名、`src/polish/service.ts` 实现），
+  空串表示"插件默认（关闭思考）"而非缺值；Host 的 `resolveEffortConfig()`
+  同时改为只转发模型确实提供的档位，其余情况回落到默认策略（顺带修掉了
+  "换模型后旧档位残留"这个同源问题）。
+  防复发：`check:typert` 新增「双端清单一致性」断言（客户端面与 Host 面逐端点比对
+  方法、wire 名顺序与取消参数）；新增 `npm run check:routes` 守卫
+  （设置文档往返 + 路由决策），两组负向对照均按预期失败。
+  验证：一次性 profile 里用真实 `typertGateway.invoke()` 调用新签名，
+  `polish` / `optimize` 都穿过网关抵达服务方法（报错停在 LLM 适配器层），
+  省略 `effort` 则被网关以 `missing "effort"` 明确拒绝；启动 stderr 为 0 字节。
+
 - **识别条比输入框宽出一大截（观感问题，几何可复现）**。
   `conversation.input.dock` 的子节点直接放进 `.composerStack`（横跨整个对话列的 flex 列），
   **不自己做宽度约束就会被拉满整列**。本插件此前的识别条正是如此：在 1400 px 宽的对话列里，
@@ -107,6 +248,45 @@
   为一个纯类型依赖声明 peer 只会平白增加一个能**让整个 bundle 被降级**的范围。
   现在：**值导入**必须有 peer；**类型专用导入**必须有钉死版本的 dev 依赖即可
   （新增一条断言与一条 pin 断言）。已用两组负向对照验证新规则同样会失败。
+
+- **设置页的「润色 / 优化模型」不显示输入框当前所选的模型**。
+  现象：开启「跟随输入框所选模型」后，在输入框里换模型（含 `/model`），
+  设置页里两个模型下拉框纹丝不动，仍旧显示原来的值——看起来"跟随没生效"。
+  根因：两个下拉框的 `value` 绑定的是 `s.polishProvider` / `s.optimizeProvider`，
+  也就是**设置文档里存的那个回退路由**，并且在跟随开启时被 `disabled`。
+  它从来没有读过输入框的模型，所以"跟随"在工作，只是**这个控件不反映它**——
+  用户看到的控件与真实调用的路由是两码事。
+  修复：跟随开启时，两个模型行改为只读展示输入框当前模型
+  （`provider / model` + 「自动跟随」角标），关闭时才显示选择框；
+  思考强度行同理（跟随时不显示，因为档位随模型走）。
+  设置页是无会话页面，因此新增 `ComposerModelSource.activeFace()`：
+  跟随 dsh 主视图的会话绑定（`ctx.uiSession.current`，同样是惰性 `ctx.get()`，
+  不引入 `inject`），在切换会话时把底层按会话的 face 重新指向，
+  两种变化（换会话、换模型）都能触发重渲染。
+  关键点：读不到会话/模型时显示明确的回退提示而不是空白，
+  让"跟随不可用"与"跟随成功"在界面上可区分。
+  防复发：`npm run check:routes` 继续守护路由决策；设置页文案与样式同步补齐。
+
+- **捕获失败被误诊为"需要 HTTPS"**。
+  现象：机器没有麦克风时点击录音，提示「无法访问麦克风（需要 HTTPS 或 localhost）」，
+  把人往排查 origin 的方向带，而实际原因是没有可用输入设备。
+  根因：`toCaptureError()`（`src/client/audio-capture.ts`）只区分
+  `NotAllowedError` / `SecurityError` / `AbortError`，其余（含 `NotFoundError`）
+  一律归入 `unavailable`，而该文案写死了 HTTPS/localhost。
+  修复：新增 `no-device` 类别（`NotFoundError` / `DevicesNotFoundError` /
+  `OverconstrainedError`），文案改为「未检测到可用的麦克风设备，请先接入麦克风后重试」；
+  同时把 `name` 的读取从 `instanceof DOMException` 改为结构化读取——
+  跨 realm 的 `DOMException` 或普通 `Error` 会因此丢失分类，
+  把"权限被拒"静默降级成"不可用"。
+  防复发：`check:routes` 新增 7 条断言覆盖全部五种 rejection 的分类与互斥性，
+  已做负向对照（把 `no-device` 分支关掉时 3 条按预期失败）。
+
+- **录音启动失败后状态卡在 `starting`**。
+  现象：`session.start()` 失败（未授权、无设备等）时，`setState('recording')`
+  不会执行，会话停在 `starting`；识别条的 `active` 恰好包含 `starting`，
+  于是那一条会一直显示"正在聆听…"，或者随下一次渲染消失，看起来像"语音条没了"。
+  修复：`start()` 的 then 分支在 `!session.active` 时，若状态仍是 `starting`
+  就回落到 `idle`（错误信息已由 `onError` 写入），不再留下悬空状态。
 
 ### 说明
 

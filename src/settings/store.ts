@@ -67,11 +67,13 @@ export function normalizeSettings(raw: unknown): BetterInputSettings {
       ? autoStopSeconds
       : DEFAULT_SETTINGS.autoStopSeconds,
     polishingEnabled: record.polishingEnabled !== false,
+    polishFollowInputModel: record.polishFollowInputModel !== false,
     polishProvider: text(record.polishProvider),
     polishModel: text(record.polishModel),
     polishReasoningEffort: text(record.polishReasoningEffort),
     polishPrompt: typeof record.polishPrompt === 'string' ? record.polishPrompt : '',
     optimizeEnabled: record.optimizeEnabled !== false,
+    optimizeFollowInputModel: record.optimizeFollowInputModel !== false,
     optimizeProvider: text(record.optimizeProvider),
     optimizeModel: text(record.optimizeModel),
     optimizeReasoningEffort: text(record.optimizeReasoningEffort),

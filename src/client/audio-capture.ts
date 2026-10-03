@@ -15,8 +15,15 @@
 
 import { SPEECH_SAMPLE_RATE } from '../config.js'
 
-/** Why capture could not start, for localized messaging by the caller. */
-export type CaptureFailureKind = 'unavailable' | 'permission' | 'interrupted'
+/**
+ * Why capture could not start, for localized messaging by the caller.
+ *
+ * `no-device` is separate from `unavailable` on purpose: `NotFoundError`
+ * (and `OverconstrainedError`) mean the *machine* has no usable input, which the
+ * user fixes by plugging a microphone in — not by changing the origin. Blaming
+ * HTTPS for a missing device sends them down the wrong path entirely.
+ */
+export type CaptureFailureKind = 'unavailable' | 'permission' | 'interrupted' | 'no-device'
 
 /** Capture failure whose `kind` the caller maps onto a localized string. */
 export class CaptureError extends Error {
@@ -314,13 +321,30 @@ function audioContextConstructor(): AudioContextConstructor | undefined {
   return holder.AudioContext ?? holder.webkitAudioContext
 }
 
-function toCaptureError(error: unknown): CaptureError {
-  const name = error instanceof DOMException ? error.name : ''
+/**
+ * Classify a `getUserMedia` rejection into the kind the UI localizes.
+ *
+ * Exported for `check:routes`: the mapping is the difference between telling a
+ * user "connect a microphone" and blaming their origin for a missing device, and
+ * nothing else in the build can see it.
+ */
+export function toCaptureError(error: unknown): CaptureError {
+  // `name` is read structurally rather than through `instanceof DOMException`:
+  // a rejection can arrive as a plain Error (or a cross-realm DOMException,
+  // which fails `instanceof` in this realm), and losing it would silently
+  // downgrade a denied permission to the generic "unavailable" sentence.
+  const name = error instanceof Error || (typeof error === 'object' && error !== null)
+    ? String((error as { name?: unknown }).name ?? '')
+    : ''
   if (name === 'NotAllowedError' || name === 'SecurityError') {
     return new CaptureError('permission', error instanceof Error ? error.message : undefined)
   }
   if (name === 'AbortError') {
     return new CaptureError('interrupted', error instanceof Error ? error.message : undefined)
+  }
+  // No input device, or the one requested cannot satisfy the constraints.
+  if (name === 'NotFoundError' || name === 'DevicesNotFoundError' || name === 'OverconstrainedError') {
+    return new CaptureError('no-device', error instanceof Error ? error.message : undefined)
   }
   return new CaptureError('unavailable', error instanceof Error ? error.message : undefined)
 }

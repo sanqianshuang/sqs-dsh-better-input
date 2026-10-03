@@ -112,7 +112,8 @@ export const TYPERT = {
       parameters: [
         { name: 'transcript', wire: 'transcript', source: 'json', codec: codec('string', textSchema) },
         { name: 'provider', wire: 'provider', source: 'json', codec: codec('string', textSchema) },
-        { name: 'model', wire: 'model', source: 'json', codec: codec('string', textSchema) }
+        { name: 'model', wire: 'model', source: 'json', codec: codec('string', textSchema) },
+        { name: 'effort', wire: 'effort', source: 'json', codec: codec('string', textSchema) }
       ],
       cancellation: { parameter: 'signal' },
       result: codec('string', polishResultSchema)
@@ -127,7 +128,8 @@ export const TYPERT = {
         { name: 'text', wire: 'text', source: 'json', codec: codec('string', textSchema) },
         { name: 'provider', wire: 'provider', source: 'json', codec: codec('string', textSchema) },
         { name: 'model', wire: 'model', source: 'json', codec: codec('string', textSchema) },
-        { name: 'context', wire: 'context', source: 'json', codec: codec('string', textSchema) }
+        { name: 'context', wire: 'context', source: 'json', codec: codec('string', textSchema) },
+        { name: 'effort', wire: 'effort', source: 'json', codec: codec('string', textSchema) }
       ],
       cancellation: { parameter: 'signal' },
       result: codec('string', optimizeResultSchema)
@@ -229,8 +231,8 @@ export const TYPERT = {
         { kind: 'method', name: 'resolveModelEfforts', signature: 'resolveModelEfforts(provider: string, model: string): Promise<{ efforts: readonly ReasoningEffortInfo[]; defaultEffort?: string }>', summary: 'Resolve reasoning-effort tiers for one route (lazy).', jsDoc: '/** Resolve reasoning-effort tiers for one route (lazy). */' },
         { kind: 'method', name: 'getAbout', signature: 'getAbout(): AboutInfo', summary: 'Read the installed plugin identity and repository info.', jsDoc: '/** Read the installed plugin identity and repository info. */' },
         { kind: 'method', name: 'checkForUpdate', signature: 'checkForUpdate(signal: AbortSignal): Promise<UpdateCheckResult>', summary: 'Check the npm registry for the latest published version.', jsDoc: '/** Check the npm registry for the latest published version. */' },
-        { kind: 'method', name: 'polish', signature: 'polish(transcript: string, provider: string, model: string, signal: AbortSignal): Promise<string>', summary: 'Polish one transcript through a selected dsh route.', jsDoc: '/** Polish one transcript through a selected dsh route. */' },
-        { kind: 'method', name: 'optimize', signature: 'optimize(text: string, provider: string, model: string, context: string, signal: AbortSignal): Promise<string>', summary: 'Optimize one prompt through a selected dsh route.', jsDoc: '/** Optimize one prompt through a selected dsh route. */' },
+        { kind: 'method', name: 'polish', signature: 'polish(transcript: string, provider: string, model: string, effort: string, signal: AbortSignal): Promise<string>', summary: 'Polish one transcript through a selected dsh route.', jsDoc: '/** Polish one transcript through a selected dsh route. */' },
+        { kind: 'method', name: 'optimize', signature: 'optimize(text: string, provider: string, model: string, context: string, effort: string, signal: AbortSignal): Promise<string>', summary: 'Optimize one prompt through a selected dsh route.', jsDoc: '/** Optimize one prompt through a selected dsh route. */' },
         { kind: 'method', name: 'templatesList', signature: 'templatesList(): Promise<TemplateListResult>', summary: 'List all saved prompt templates, newest first.', jsDoc: '/** List all saved prompt templates, newest first. */' },
         { kind: 'method', name: 'templatesSave', signature: 'templatesSave(template: TemplateInput, signal: AbortSignal): Promise<TemplateSaveResult>', summary: 'Create or update one prompt template on the Host filesystem.', jsDoc: '/** Create or update one prompt template on the Host filesystem. */' },
         { kind: 'method', name: 'templatesRemove', signature: 'templatesRemove(id: string, signal: AbortSignal): Promise<TemplateRemoveResult>', summary: 'Remove one prompt template by id.', jsDoc: '/** Remove one prompt template by id. */' }

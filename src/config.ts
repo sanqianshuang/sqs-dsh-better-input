@@ -102,21 +102,40 @@ export interface BetterInputSettings {
   autoStopSeconds: number
   /** Enable Host LLM polishing after the transcript lands in the draft. */
   polishingEnabled: boolean
+  /**
+   * Polish with the model the composer currently has selected instead of the
+   * stored route below. The stored route stays as the fallback for compositions
+   * where the composer's selection cannot be read.
+   *
+   * Only the model follows; {@link BetterInputSettings.polishReasoningEffort}
+   * stays authoritative for thinking.
+   */
+  polishFollowInputModel: boolean
   /** dsh polish provider id (a route already registered in dsh). */
   polishProvider: string
   /** dsh polish model id. */
   polishModel: string
-  /** Selected reasoning effort id for polish, empty uses the adapter's default (usually the lightest). */
+  /**
+   * Thinking tier for polish, independent of the model that runs it.
+   *
+   * Empty means the plugin's own default, which is **thinking off**: the model's
+   * `off` tier when it advertises one, otherwise no `reasoningEffort` field at
+   * all so the adapter's own default applies. This is a separate setting on
+   * purpose — it does not follow the composer's effort even while the model
+   * follows the composer (see {@link resolveInputModelRoute}).
+   */
   polishReasoningEffort: string
   /** Custom polish system prompt, empty for the built-in one. */
   polishPrompt: string
   /** Enable prompt optimization through the Host LLM. */
   optimizeEnabled: boolean
+  /** Optimize with the model the composer currently has selected; see {@link BetterInputSettings.polishFollowInputModel}. */
+  optimizeFollowInputModel: boolean
   /** dsh optimize provider id (reuses the same route pool as polish). */
   optimizeProvider: string
   /** dsh optimize model id. */
   optimizeModel: string
-  /** Selected reasoning effort id for optimize, empty uses the adapter's default (usually the lightest). */
+  /** Thinking tier for optimize; see {@link BetterInputSettings.polishReasoningEffort}. */
   optimizeReasoningEffort: string
   /** Custom optimize system prompt, empty for the built-in one. */
   optimizePrompt: string
@@ -129,6 +148,8 @@ export interface BetterInputSettings {
  * experience immediately; reasoning effort left empty, which the Host
  * translates to "thinking off" (the model's `off` tier when it exposes
  * one, otherwise the adapter's own default).
+ * Both features follow the composer's model by default — the model the user
+ * picked in the input box is the one they expect an assist to run on.
  * Provider/model stay empty and get auto-filled on first settings page
  * load via SettingsController (first route returned by listRoutes).
  */
@@ -139,11 +160,13 @@ export const DEFAULT_SETTINGS: BetterInputSettings = Object.freeze({
   segmentSeconds: DEFAULT_SEGMENT_SECONDS,
   autoStopSeconds: DEFAULT_AUTO_STOP_SECONDS,
   polishingEnabled: true,
+  polishFollowInputModel: true,
   polishProvider: '',
   polishModel: '',
   polishReasoningEffort: '',
   polishPrompt: '',
   optimizeEnabled: true,
+  optimizeFollowInputModel: true,
   optimizeProvider: '',
   optimizeModel: '',
   optimizeReasoningEffort: '',
@@ -152,6 +175,67 @@ export const DEFAULT_SETTINGS: BetterInputSettings = Object.freeze({
 })
 
 export type BetterInputSettingsPatch = Partial<BetterInputSettings>
+
+/**
+ * One route the composer's model seat is currently on, as the browser half
+ * reads it from dsh's per-session model directory.
+ */
+export interface ComposerModelRoute {
+  readonly provider: string
+  readonly model: string
+}
+
+/** The route an assist feature actually calls, after following/fallback. */
+export interface EffectiveModelRoute {
+  readonly provider: string
+  readonly model: string
+  /** Effort to forward; `''` means "let the Host apply the plugin's default". */
+  readonly reasoningEffort: string
+}
+
+/**
+ * Resolve the route an assist feature (polish / optimize) must call.
+ *
+ * `follow` is the feature's `*FollowInputModel` setting. When it is on and the
+ * composer's current selection is readable, that selection wins — the model the
+ * user sees in the input box is the one the assist runs on. Otherwise the route
+ * configured on the settings page is used, which is also the fallback for a
+ * composition where the model-directory service is absent or the session has no
+ * selection yet.
+ *
+ * **Only the model follows.** The reasoning effort always comes from the
+ * feature's own setting, never from the composer.
+ *
+ * An earlier revision carried the composer's effort along with its model. That
+ * looked consistent — the input box shows "model · effort" as one unit — but it
+ * silently raised the cost of every assist: the moment the user turned thinking
+ * up on a conversation, polishing and prompt optimization started paying for
+ * that same tier on *every* recording and every ✨ click, with no control of
+ * their own to turn it back down. The two are different decisions and now have
+ * different owners: the composer's effort belongs to the conversation, an
+ * assist's effort belongs to the assist.
+ *
+ * `''` effort is meaningful, not a gap: it is the plugin's own "thinking off"
+ * default, so it must survive the trip to the Host.
+ *
+ * @returns the route to call, or `null` when neither side names one — the
+ *   callers turn that into "no model configured".
+ */
+export function resolveInputModelRoute(
+  follow: boolean,
+  composer: ComposerModelRoute | null,
+  configured: { readonly provider: string; readonly model: string; readonly reasoningEffort: string }
+): EffectiveModelRoute {
+  // The effort is this feature's own setting in every branch — see the note
+  // above; it is deliberately NOT read from `composer`.
+  const effort = configured.reasoningEffort
+  if (follow && composer !== null) {
+    const provider = composer.provider.trim()
+    const model = composer.model.trim()
+    if (provider !== '' && model !== '') return { provider, model, reasoningEffort: effort }
+  }
+  return { provider: configured.provider, model: configured.model, reasoningEffort: effort }
+}
 
 /** One selectable reasoning effort tier for a specific model route. */
 export interface ReasoningEffortInfo {

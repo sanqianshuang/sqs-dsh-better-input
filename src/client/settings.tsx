@@ -1,8 +1,9 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { MAX_AUTO_STOP_SECONDS, MAX_SEGMENT_SECONDS, MIN_AUTO_STOP_SECONDS, MIN_SEGMENT_SECONDS, SPEECH_LANGUAGE_HINTS, SPEECH_MAX_RECORDING_SECONDS, type BetterInputSettings, type BetterInputSettingsPatch, type ReasoningEffortInfo } from '../config.js'
 import type { TranslateNS } from '@deepseek-ai/dsh-client-ui-slots'
 import type { SettingsController, UpdateSnapshot } from './settings-controller.js'
 import { useAboutSnapshot, useEffortsSnapshot, useSettingsSnapshot, useRoutesSnapshot, useSpeechSnapshot, useUpdateSnapshot } from './settings-controller.js'
+import type { ComposerModelSource } from './composer-model.js'
 
 /** The framework-injected `t` seat for the BetterInput namespace. */
 type Translate = TranslateNS<'better-input'>
@@ -31,9 +32,11 @@ function ReasoningEffortSelect(props: {
   model: string
   storedEffort: string
   onChange: (effortId: string) => void
+  /** Rendered but inert while the feature follows the composer's model. */
+  disabled?: boolean
   t: Translate
 }) {
-  const { settingsController, provider, model, storedEffort, onChange, t } = props
+  const { settingsController, provider, model, storedEffort, onChange, disabled = false, t } = props
   const efforts = useEffortsSnapshot(settingsController)
 
   // Kick off the lazy fetch whenever the selected model changes.
@@ -67,6 +70,7 @@ function ReasoningEffortSelect(props: {
     <select
       value={storedEffort}
       onChange={(event) => onChange(event.target.value)}
+      disabled={disabled}
       style={inputStyle}
     >
       <option value="">{t('effortDefaultLabel')}</option>
@@ -83,6 +87,8 @@ export type SettingsSectionProps = {
   readonly close: () => void
   readonly t: Translate
   readonly settingsController: SettingsController
+  /** The composer's model selection, so the model rows can follow the input box. */
+  readonly composerModels: ComposerModelSource
 }
 
 type FieldState = {
@@ -94,12 +100,17 @@ type FieldState = {
  * The BetterInput settings page. Renders the recognition and polishing
  * configuration; every field edits a local draft and saves on blur/change.
  */
-export function BetterInputSettingsSection({ close, settingsController, t }: SettingsSectionProps) {
+export function BetterInputSettingsSection({ close, settingsController, composerModels, t }: SettingsSectionProps) {
   const settings = useSettingsSnapshot(settingsController)
   const routes = useRoutesSnapshot(settingsController)
   const about = useAboutSnapshot(settingsController)
   const update = useUpdateSnapshot(settingsController)
   const speech = useSpeechSnapshot(settingsController)
+  // The model the composer is currently on. The settings page is session-less,
+  // so this follows dsh's main-view Session binding; when the plugin is absent
+  // it is `null` and the rows fall back to the configured route.
+  const composerFace = useMemo(() => composerModels.activeFace(), [composerModels])
+  const composerModel = composerFace.useCurrent()
   const [drafts, setDrafts] = useState<Record<string, string>>({})
   const [saveFailed, setSaveFailed] = useState(false)
   const [showDefaultPrompt, setShowDefaultPrompt] = useState(false)
@@ -305,37 +316,74 @@ export function BetterInputSettingsSection({ close, settingsController, t }: Set
 
       {s.polishingEnabled ? (
         <>
-          <Field label={t('polishModelLabel')} hint={t('polishModelHint')}>
-            <select
-              value={drafts.polishProvider !== undefined || drafts.polishModel !== undefined
-                ? `${drafts.polishProvider ?? s.polishProvider}\u0000${drafts.polishModel ?? s.polishModel}`
-                : `${s.polishProvider}\u0000${s.polishModel}`}
-              onChange={(event) => {
-                const [provider, model] = event.target.value.split('\u0000')
-                void save({ polishProvider: provider ?? '', polishModel: model ?? '' })
-              }}
-              style={inputStyle}
-              disabled={routes.status !== 'ready' || routes.routes.length === 0}
-            >
-              <option value={'\u0000'}>{t('polishModelNone')}</option>
-              {routes.status === 'ready' && routes.routes.map((route) => (
-                <option key={`${route.provider}\u0000${route.model}`} value={`${route.provider}\u0000${route.model}`}>
-                  {route.providerName} / {route.modelName}
-                </option>
-              ))}
-            </select>
+          <Field label={t('polishFollowLabel')} hint={t('polishFollowHint')}>
+            <label style={switchStyle}>
+              <input
+                type="checkbox"
+                checked={s.polishFollowInputModel}
+                onChange={(event) => void save({ polishFollowInputModel: event.target.checked })}
+              />
+              <span>{s.polishFollowInputModel ? t('on') : t('off')}</span>
+            </label>
           </Field>
 
-          <Field label={t('polishEffortLabel')} hint={t('polishEffortHint')}>
-            <ReasoningEffortSelect
-              settingsController={settingsController}
-              provider={s.polishProvider}
-              model={s.polishModel}
-              storedEffort={s.polishReasoningEffort}
-              onChange={(effortId) => void save({ polishReasoningEffort: effortId })}
-              t={t}
-            />
+          <Field label={t('polishModelLabel')} hint={t('polishModelHint')}>
+            {s.polishFollowInputModel ? (
+              // Following the input box: show the model the composer is actually
+              // on, instead of the stored fallback. At a glance the user can
+              // confirm switching the composer model took effect here too.
+              <div style={followRowStyle}>
+                <span style={followValueStyle}>
+                  {composerModel === null
+                    ? t('followModelUnknown')
+                    : `${composerModel.provider} / ${composerModel.model}`}
+                </span>
+                <span style={followBadgeStyle}>{t('followModelBadge')}</span>
+              </div>
+            ) : (
+              <select
+                value={drafts.polishProvider !== undefined || drafts.polishModel !== undefined
+                  ? `${drafts.polishProvider ?? s.polishProvider}\u0000${drafts.polishModel ?? s.polishModel}`
+                  : `${s.polishProvider}\u0000${s.polishModel}`}
+                onChange={(event) => {
+                  const [provider, model] = event.target.value.split('\u0000')
+                  void save({ polishProvider: provider ?? '', polishModel: model ?? '' })
+                }}
+                style={inputStyle}
+                disabled={routes.status !== 'ready' || routes.routes.length === 0}
+              >
+                <option value={'\u0000'}>{t('polishModelNone')}</option>
+                {routes.status === 'ready' && routes.routes.map((route) => (
+                  <option key={`${route.provider}\u0000${route.model}`} value={`${route.provider}\u0000${route.model}`}>
+                    {route.providerName} / {route.modelName}
+                  </option>
+                ))}
+              </select>
+            )}
           </Field>
+
+          {(() => {
+            // The effort row is shown whether or not the model follows the input
+            // box — the two are independent settings. When following, the tiers
+            // must be enumerated from the model that will actually run (the
+            // composer's), because that is the model whose `efforts` list the
+            // Host validates the stored tier against.
+            const effortRoute = s.polishFollowInputModel
+              ? { provider: composerModel?.provider ?? '', model: composerModel?.model ?? '' }
+              : { provider: s.polishProvider, model: s.polishModel }
+            return (
+              <Field label={t('polishEffortLabel')} hint={t('polishEffortHint')}>
+                <ReasoningEffortSelect
+                  settingsController={settingsController}
+                  provider={effortRoute.provider}
+                  model={effortRoute.model}
+                  storedEffort={s.polishReasoningEffort}
+                  onChange={(effortId) => void save({ polishReasoningEffort: effortId })}
+                  t={t}
+                />
+              </Field>
+            )
+          })()}
 
           <Field label={t('polishPromptLabel')} hint={t('polishPromptHint')}>
             <textarea
@@ -383,37 +431,68 @@ export function BetterInputSettingsSection({ close, settingsController, t }: Set
 
       <h3 style={{ margin: '16px 0 0', fontSize: 14 }}>{t('optimizeSectionLabel')}</h3>
 
+      <Field label={t('optimizeFollowLabel')} hint={t('optimizeFollowHint')}>
+        <label style={switchStyle}>
+          <input
+            type="checkbox"
+            checked={s.optimizeFollowInputModel}
+            onChange={(event) => void save({ optimizeFollowInputModel: event.target.checked })}
+          />
+          <span>{s.optimizeFollowInputModel ? t('on') : t('off')}</span>
+        </label>
+      </Field>
+
       <Field label={t('optimizeModelLabel')} hint={t('optimizeModelHint')}>
-            <select
-              value={drafts.optimizeProvider !== undefined || drafts.optimizeModel !== undefined
-                ? `${drafts.optimizeProvider ?? s.optimizeProvider}\u0000${drafts.optimizeModel ?? s.optimizeModel}`
-                : `${s.optimizeProvider}\u0000${s.optimizeModel}`}
-              onChange={(event) => {
-                const [provider, model] = event.target.value.split('\u0000')
-                void save({ optimizeProvider: provider ?? '', optimizeModel: model ?? '' })
-              }}
-              style={inputStyle}
-              disabled={routes.status !== 'ready' || routes.routes.length === 0}
-            >
-              <option value={'\u0000'}>{t('polishModelNone')}</option>
-              {routes.status === 'ready' && routes.routes.map((route) => (
-                <option key={`${route.provider}\u0000${route.model}`} value={`${route.provider}\u0000${route.model}`}>
-                  {route.providerName} / {route.modelName}
-                </option>
-              ))}
-            </select>
+            {s.optimizeFollowInputModel ? (
+              <div style={followRowStyle}>
+                <span style={followValueStyle}>
+                  {composerModel === null
+                    ? t('followModelUnknown')
+                    : `${composerModel.provider} / ${composerModel.model}`}
+                </span>
+                <span style={followBadgeStyle}>{t('followModelBadge')}</span>
+              </div>
+            ) : (
+              <select
+                value={drafts.optimizeProvider !== undefined || drafts.optimizeModel !== undefined
+                  ? `${drafts.optimizeProvider ?? s.optimizeProvider}\u0000${drafts.optimizeModel ?? s.optimizeModel}`
+                  : `${s.optimizeProvider}\u0000${s.optimizeModel}`}
+                onChange={(event) => {
+                  const [provider, model] = event.target.value.split('\u0000')
+                  void save({ optimizeProvider: provider ?? '', optimizeModel: model ?? '' })
+                }}
+                style={inputStyle}
+                disabled={routes.status !== 'ready' || routes.routes.length === 0}
+              >
+                <option value={'\u0000'}>{t('polishModelNone')}</option>
+                {routes.status === 'ready' && routes.routes.map((route) => (
+                  <option key={`${route.provider}\u0000${route.model}`} value={`${route.provider}\u0000${route.model}`}>
+                    {route.providerName} / {route.modelName}
+                  </option>
+                ))}
+              </select>
+            )}
           </Field>
 
-          <Field label={t('optimizeEffortLabel')} hint={t('optimizeEffortHint')}>
-            <ReasoningEffortSelect
-              settingsController={settingsController}
-              provider={s.optimizeProvider}
-              model={s.optimizeModel}
-              storedEffort={s.optimizeReasoningEffort}
-              onChange={(effortId) => void save({ optimizeReasoningEffort: effortId })}
-              t={t}
-            />
-          </Field>
+          {(() => {
+            // See the polish effort row above: the tier is its own setting and
+            // stays visible while the model follows the composer.
+            const effortRoute = s.optimizeFollowInputModel
+              ? { provider: composerModel?.provider ?? '', model: composerModel?.model ?? '' }
+              : { provider: s.optimizeProvider, model: s.optimizeModel }
+            return (
+              <Field label={t('optimizeEffortLabel')} hint={t('optimizeEffortHint')}>
+                <ReasoningEffortSelect
+                  settingsController={settingsController}
+                  provider={effortRoute.provider}
+                  model={effortRoute.model}
+                  storedEffort={s.optimizeReasoningEffort}
+                  onChange={(effortId) => void save({ optimizeReasoningEffort: effortId })}
+                  t={t}
+                />
+              </Field>
+            )
+          })()}
 
           <Field label={t('optimizePromptLabel')} hint={t('optimizePromptHint')}>
             <textarea
@@ -615,6 +694,35 @@ const hintStyle: React.CSSProperties = {
   margin: 0,
   fontSize: 12,
   opacity: 0.7
+}
+
+/** The read-only stand-in shown while a model row follows the composer. */
+const followRowStyle: React.CSSProperties = {
+  display: 'flex',
+  alignItems: 'center',
+  justifyContent: 'space-between',
+  gap: 8,
+  padding: '6px 8px',
+  borderRadius: 6,
+  border: '1px dashed var(--dsw-alias-border-l2, rgba(128,128,128,0.4))',
+  background: 'var(--dsw-alias-bg-layer-1, rgba(0,0,0,0.03))',
+  fontSize: 13
+}
+
+const followValueStyle: React.CSSProperties = {
+  overflow: 'hidden',
+  textOverflow: 'ellipsis',
+  whiteSpace: 'nowrap',
+  fontFamily: 'monospace'
+}
+
+const followBadgeStyle: React.CSSProperties = {
+  flex: 'none',
+  padding: '1px 6px',
+  borderRadius: 999,
+  border: '1px solid var(--dsw-alias-border-l2, rgba(128,128,128,0.4))',
+  fontSize: 11,
+  opacity: 0.8
 }
 
 const errorStyle: React.CSSProperties = {

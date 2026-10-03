@@ -1,8 +1,9 @@
 import { useEffect, useRef } from 'react'
 import type { SnapshotSelectorHook, TranslateNS } from '@deepseek-ai/dsh-client-ui-slots'
 import type { InputState } from '@deepseek-ai/dsh-client-ui-conversation/client'
-import { DEFAULT_SETTINGS, effectiveRecordingSeconds, type BetterInputSettings, type BetterInputSettingsPatch } from '../config.js'
+import { DEFAULT_SETTINGS, effectiveRecordingSeconds, resolveInputModelRoute, type BetterInputSettings, type BetterInputSettingsPatch, type ComposerModelRoute, type EffectiveModelRoute } from '../config.js'
 import type { BetterInputRemote } from '../remote.js'
+import type { ComposerModelFace } from './composer-model.js'
 import { captureFailureMessage, NativeSpeechSession, sessionOptionsFor, type SpeechSessionSettings } from './native-speech.js'
 import { isCaptureSupported } from './audio-capture.js'
 import { useVoiceInputSession, type VoiceInputSession } from './voice-session.js'
@@ -23,12 +24,37 @@ export type InputZoneLikeProps = {
   readonly voiceSession: VoiceInputSession
   readonly remote: BetterInputRemote
   readonly useSettings: () => SettingsFace
+  /** The composer's selected model for this Session (see composer-model.ts). */
+  readonly composerModel: ComposerModelFace
   readonly t: Translate
 }
 
 export type SettingsFace = {
   readonly status: 'loading' | 'ready' | 'error'
   readonly settings: BetterInputSettings
+}
+
+/**
+ * The route polish will call for the current settings and composer selection.
+ *
+ * Returns `null` when no usable route exists, so callers get one answer to "is
+ * polish actually pointed somewhere" instead of repeating the emptiness test.
+ * `resolveInputModelRoute` itself always returns a route object — with the
+ * thinking tier decoupled from the composer it has no failure branch left — so
+ * the pair has to be validated here.
+ */
+function resolvePolishRoute(
+  settings: BetterInputSettings | null,
+  composer: ComposerModelRoute | null
+): EffectiveModelRoute | null {
+  if (settings === null) return null
+  const route = resolveInputModelRoute(settings.polishFollowInputModel, composer, {
+    provider: settings.polishProvider,
+    model: settings.polishModel,
+    reasoningEffort: settings.polishReasoningEffort
+  })
+  if (route.provider.trim() === '' || route.model.trim() === '') return null
+  return route
 }
 
 /**
@@ -42,10 +68,13 @@ export type SettingsFace = {
  * when the user stops, one pass over the whole recording produces the
  * authoritative transcript and AI polishing runs on that.
  */
-export function MicrophoneButton({ useInput, inputActions, voiceSession, remote, useSettings, t }: InputZoneLikeProps) {
+export function MicrophoneButton({ useInput, inputActions, voiceSession, remote, useSettings, composerModel, t }: InputZoneLikeProps) {
   const snapshot = useVoiceInputSession(voiceSession)
   const state = snapshot.state
   const setState = (next: typeof state, detail = '') => voiceSession.setState(next, detail)
+  // The model the composer currently has selected; re-renders this button when
+  // the user switches it so the "polish configured" hint stays honest.
+  const composer = composerModel.useCurrent()
   // The current composer draft, read through the framework's standard `useInput`
   // hook. `InputState` keeps exposing `.draft` in dsh 0.1.2.
   const input = useInput((state) => state)
@@ -97,13 +126,17 @@ export function MicrophoneButton({ useInput, inputActions, voiceSession, remote,
 
   const settings = settingsFace.status === 'ready' ? settingsFace.settings : settingsRef.current
   const polishingEnabled = settings?.polishingEnabled ?? false
-  const polishProvider = (settings?.polishProvider ?? '').trim()
-  const polishModel = (settings?.polishModel ?? '').trim()
-  const polishConfigured = polishingEnabled && polishProvider !== '' && polishModel !== ''
+  // The route polish will call: the composer's model when the feature follows the
+  // input box (the default), otherwise the route configured in settings — which
+  // is also the fallback when the composer's selection cannot be read. The
+  // thinking tier is this feature's own setting; it does not follow the composer
+  // (see `resolveInputModelRoute`).
+  const polishConfigured = polishingEnabled && resolvePolishRoute(settings, composer) !== null
 
   /** Localized capture failure; the kind decides which sentence the user sees. */
   const captureDetail = (kind: string, message: string): string => {
     if (kind === 'permission') return t('voicePermissionDenied')
+    if (kind === 'no-device') return t('voiceNoDevice')
     if (kind === 'unavailable') return t('voiceCaptureUnavailable')
     return message !== '' ? message : t('voiceFailed')
   }
@@ -173,13 +206,19 @@ export function MicrophoneButton({ useInput, inputActions, voiceSession, remote,
           }
           const draftAtStop = writeDraft(transcript)
           const current = settingsRef.current
-          if (current !== null && current.polishingEnabled && current.polishProvider.trim() !== '' && current.polishModel.trim() !== '') {
+          // Re-resolve at stop time: the composer's model may have changed while
+          // the user was speaking, and this is the call that actually runs.
+          // `settingsRef.current` is read inside so the helper owns the whole
+          // "is polish both enabled and pointed at a real route" question.
+          const route = resolvePolishRoute(current, composerModel.read())
+          if (current !== null && current.polishingEnabled && route !== null) {
             void polishDraft({
               transcript,
               baseDraft,
               draftAtStop,
-              provider: current.polishProvider,
-              model: current.polishModel,
+              provider: route.provider,
+              model: route.model,
+              reasoningEffort: route.reasoningEffort,
               remote,
               setState,
               latestDraftRef,
@@ -196,7 +235,13 @@ export function MicrophoneButton({ useInput, inputActions, voiceSession, remote,
     speechRef.current = session
     void session.start().then(() => {
       if (!mountedRef.current || speechRef.current !== session) return
-      if (!session.active) return
+      if (!session.active) {
+        // `start()` reported the failure through `onError`, which already moved
+        // the session into its error state. Leaving `starting` here would strand
+        // the status bar on "Listening…" for a recording that never began.
+        if (voiceSession.getSnapshot().state === 'starting') setState('idle')
+        return
+      }
       setState('recording')
       // Auto-stop at the configured recording limit so an abandoned session
       // never holds the microphone forever.
@@ -253,6 +298,8 @@ export interface PolishDraftOptions {
   draftAtStop: string
   provider: string
   model: string
+  /** Reasoning effort to forward; `''` asks the Host for its default policy. */
+  reasoningEffort: string
   remote: BetterInputRemote
   setState: (state: 'idle' | 'error' | 'polish-error' | 'polishing', detail?: string) => void
   latestDraftRef: { current: string }
@@ -267,7 +314,13 @@ export async function polishDraft(options: PolishDraftOptions): Promise<void> {
   options.setState('polishing')
 
   try {
-    const result = await options.remote.polish(options.transcript, options.provider, options.model, controller.signal)
+    const result = await options.remote.polish(
+      options.transcript,
+      options.provider,
+      options.model,
+      options.reasoningEffort,
+      controller.signal
+    )
     if (controller.signal.aborted) return
     if (!shouldApplyPolishResult(options.latestDraftRef.current, options.draftAtStop, options.baseDraft)) {
       options.setState('idle')

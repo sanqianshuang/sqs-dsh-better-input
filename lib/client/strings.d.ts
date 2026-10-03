@@ -9,6 +9,7 @@ export type BetterInputStrings = {
     voiceStop: string;
     voiceBusy: string;
     voicePermissionDenied: string;
+    voiceNoDevice: string;
     voiceCaptureUnavailable: string;
     listening: string;
     voiceCancel: string;
@@ -45,9 +46,15 @@ export type BetterInputStrings = {
     polishHint: string;
     on: string;
     off: string;
+    polishFollowLabel: string;
+    polishFollowHint: string;
     polishModelLabel: string;
     polishModelHint: string;
     polishModelNone: string;
+    /** Shown in place of the model row while the feature follows the composer. */
+    followModelBadge: string;
+    /** Shown when the composer's selection cannot be read (optional service absent). */
+    followModelUnknown: string;
     polishEffortLabel: string;
     polishEffortHint: string;
     polishPromptLabel: string;
@@ -71,6 +78,8 @@ export type BetterInputStrings = {
     optimizeCancel: string;
     optimizeNotConfigured: string;
     optimizeSectionLabel: string;
+    optimizeFollowLabel: string;
+    optimizeFollowHint: string;
     optimizeModelLabel: string;
     optimizeModelHint: string;
     optimizeEffortLabel: string;

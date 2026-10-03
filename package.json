@@ -1,6 +1,6 @@
 {
   "name": "sqs-dsh-better-input",
-  "version": "0.2.0-rc.2",
+  "version": "0.2.0-rc.2-sqs.1",
   "description": "Better input experience for DeepSeek Harness: voice input with AI polishing, prompt optimization, and a local prompt template library",
   "license": "MIT",
   "author": "sanqianshuang",
@@ -70,9 +70,10 @@
     "check": "tsc --noEmit -p tsconfig.json",
     "check:bundle": "node scripts/check-client-bundle.mjs",
     "check:peers": "node scripts/check-dsh-peers.mjs",
+    "check:routes": "unrun scripts/check-input-routes.ts",
     "check:speech": "unrun scripts/check-speech-audio.ts",
     "check:typert": "node scripts/verify-typert-manifest.mjs",
-    "verify": "npm run build && npm run check:bundle && npm run check:speech && npm run check:typert && npm run check:peers",
+    "verify": "npm run build && npm run check:bundle && npm run check:speech && npm run check:typert && npm run check:routes && npm run check:peers",
     "dev:watch": "tsdown --watch",
     "prepack": "npm run build"
   },

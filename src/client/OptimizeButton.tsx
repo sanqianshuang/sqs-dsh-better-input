@@ -4,6 +4,8 @@ import type { SnapshotSelectorHook, TranslateNS } from '@deepseek-ai/dsh-client-
 import type { InputState } from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type { ChatSnapshot } from '@deepseek-ai/dsh-client-ui-chat/client'
 import type { BetterInputRemote } from '../remote.js'
+import { resolveInputModelRoute } from '../config.js'
+import type { ComposerModelFace } from './composer-model.js'
 import type { SettingsFace } from './MicrophoneButton.js'
 
 /** The framework-injected `t` seat for the BetterInput namespace. */
@@ -24,6 +26,8 @@ export type OptimizeButtonProps = {
   }
   readonly remote: BetterInputRemote
   readonly useSettings: () => SettingsFace
+  /** The composer's selected model for this Session (see composer-model.ts). */
+  readonly composerModel: ComposerModelFace
   readonly t: Translate
 }
 
@@ -40,7 +44,7 @@ type OptimizeState =
  * the original and optimized text. The draft is replaced only when the user
  * clicks "Adopt".
  */
-export function OptimizeButton({ useChat, useInput, inputActions, remote, useSettings, t }: OptimizeButtonProps) {
+export function OptimizeButton({ useChat, useInput, inputActions, remote, useSettings, composerModel, t }: OptimizeButtonProps) {
   const [state, setState] = useState<OptimizeState>({ kind: 'idle' })
   const settingsFace = useSettings()
   const abortRef = useRef<AbortController | null>(null)
@@ -48,6 +52,9 @@ export function OptimizeButton({ useChat, useInput, inputActions, remote, useSet
   // target snapshot (its `legacy.nodes` carries the ordered message array).
   const input = useInput((state) => state)
   const chat = useChat((area) => area)
+  // The model the composer currently has selected; re-renders this button when
+  // the user switches it, so the enable/disable state stays honest.
+  const composer = composerModel.useCurrent()
 
   // Keep the latest draft in a ref so the click handler can read it without
   // re-subscribing on every keystroke.
@@ -67,9 +74,21 @@ export function OptimizeButton({ useChat, useInput, inputActions, remote, useSet
   // against the "everything is a plugin" philosophy, so it stays always-on
   // and users just configure its provider/model/prompt in settings.
 
-  const provider = settings?.optimizeProvider.trim() ?? ''
-  const model = settings?.optimizeModel.trim() ?? ''
-  const modelConfigured = provider !== '' && model !== ''
+  // The route actually called: the composer's model when the feature follows the
+  // input box (the default), otherwise the route configured in settings — which
+  // is also the fallback when the composer's selection cannot be read. The
+  // thinking tier is this feature's own setting; it does not follow the composer
+  // (see `resolveInputModelRoute`).
+  const route = resolveInputModelRoute(
+    settings?.optimizeFollowInputModel ?? true,
+    composer,
+    {
+      provider: settings?.optimizeProvider ?? '',
+      model: settings?.optimizeModel ?? '',
+      reasoningEffort: settings?.optimizeReasoningEffort ?? ''
+    }
+  )
+  const modelConfigured = route.provider.trim() !== '' && route.model.trim() !== ''
 
   const handleClick = async () => {
     if (state.kind === 'optimizing') return
@@ -79,7 +98,18 @@ export function OptimizeButton({ useChat, useInput, inputActions, remote, useSet
       return
     }
 
-    if (!modelConfigured) {
+    // Re-resolve at click time: the composer's model may have changed since the
+    // last render, and the click is what actually starts the request.
+    const current = resolveInputModelRoute(
+      settings?.optimizeFollowInputModel ?? true,
+      composerModel.read(),
+      {
+        provider: settings?.optimizeProvider ?? '',
+        model: settings?.optimizeModel ?? '',
+        reasoningEffort: settings?.optimizeReasoningEffort ?? ''
+      }
+    )
+    if (current.provider.trim() === '' || current.model.trim() === '') {
       setState({ kind: 'error', message: t('optimizeNotConfigured') })
       return
     }
@@ -93,7 +123,14 @@ export function OptimizeButton({ useChat, useInput, inputActions, remote, useSet
       // Extract conversation context based on user settings
       const contextTurns = settings?.contextTurns ?? 3
       const context = contextTurns > 0 ? extractConversationContext(chat.legacy.nodes, contextTurns) : ''
-      const result = await remote.optimize(draft, provider, model, context, controller.signal)
+      const result = await remote.optimize(
+        draft,
+        current.provider,
+        current.model,
+        context,
+        current.reasoningEffort,
+        controller.signal
+      )
       if (controller.signal.aborted) return
       if (!result.ok) {
         setState({ kind: 'error', message: result.error.message })

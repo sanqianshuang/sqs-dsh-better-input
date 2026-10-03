@@ -2,6 +2,7 @@ import type { SnapshotSelectorHook, TranslateNS } from '@deepseek-ai/dsh-client-
 import type { InputState } from '@deepseek-ai/dsh-client-ui-conversation/client';
 import { type BetterInputSettings, type BetterInputSettingsPatch } from '../config.js';
 import type { BetterInputRemote } from '../remote.js';
+import type { ComposerModelFace } from './composer-model.js';
 import { type VoiceInputSession } from './voice-session.js';
 /** The framework-injected `t` seat for the BetterInput namespace. */
 type Translate = TranslateNS<'better-input'>;
@@ -18,6 +19,8 @@ export type InputZoneLikeProps = {
     readonly voiceSession: VoiceInputSession;
     readonly remote: BetterInputRemote;
     readonly useSettings: () => SettingsFace;
+    /** The composer's selected model for this Session (see composer-model.ts). */
+    readonly composerModel: ComposerModelFace;
     readonly t: Translate;
 };
 export type SettingsFace = {
@@ -35,13 +38,15 @@ export type SettingsFace = {
  * when the user stops, one pass over the whole recording produces the
  * authoritative transcript and AI polishing runs on that.
  */
-export declare function MicrophoneButton({ useInput, inputActions, voiceSession, remote, useSettings, t }: InputZoneLikeProps): import("react").JSX.Element;
+export declare function MicrophoneButton({ useInput, inputActions, voiceSession, remote, useSettings, composerModel, t }: InputZoneLikeProps): import("react").JSX.Element;
 export interface PolishDraftOptions {
     transcript: string;
     baseDraft: string;
     draftAtStop: string;
     provider: string;
     model: string;
+    /** Reasoning effort to forward; `''` asks the Host for its default policy. */
+    reasoningEffort: string;
     remote: BetterInputRemote;
     setState: (state: 'idle' | 'error' | 'polish-error' | 'polishing', detail?: string) => void;
     latestDraftRef: {

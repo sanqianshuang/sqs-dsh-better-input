@@ -2,6 +2,7 @@ import type { Context } from '@deepseek-ai/cordis';
 import { TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol';
 import { type BetterInputSettingsPatch, type BetterInputSettingsView, type PolishRoute, type ReasoningEffortInfo } from '../config.js';
 import { type AboutInfo, type UpdateCheckResult } from '../about.js';
+import type { TemplateInputWire, TemplateWire } from '../remote-contract.js';
 export declare class BetterInputPolishService extends TypertRemoteService {
     static inject: string[];
     private readonly settingsStore;
@@ -31,15 +32,48 @@ export declare class BetterInputPolishService extends TypertRemoteService {
     }>;
     getAbout(): AboutInfo;
     checkForUpdate(signal: AbortSignal): Promise<UpdateCheckResult>;
-    polish(transcript: string, provider: string, model: string, signal: AbortSignal): Promise<string>;
-    optimize(text: string, provider: string, model: string, context: string, signal: AbortSignal): Promise<string>;
+    /**
+     * Polish one transcript.
+     *
+     * The route and the reasoning effort are supplied by the caller rather than
+     * read from the stored settings: the browser half resolves them from the
+     * composer's current model (see `src/client/composer-model.ts`) and falls back
+     * to the settings route when that is unreadable. An empty `effort` is the
+     * plugin's "thinking off" default, not a missing value.
+     */
+    polish(transcript: string, provider: string, model: string, effort: string, signal: AbortSignal): Promise<string>;
+    /**
+     * List the saved prompt templates, newest first.
+     *
+     * `TemplateStore.list()` already sorts by `updatedAt` descending, so the
+     * wire order is the store order. This is the RPC the settings section and
+     * the `/` trigger source read from; without it the Typert gateway resolves
+     * the descriptor but finds no callable method on this service and fails the
+     * whole call with `gateway/method-unavailable` (see `toTemplateWire`).
+     */
+    templatesList(): Promise<{
+        templates: TemplateWire[];
+    }>;
+    templatesSave(template: TemplateInputWire, signal: AbortSignal): Promise<{
+        template: TemplateWire;
+    }>;
+    templatesRemove(id: string, signal: AbortSignal): Promise<{
+        removed: boolean;
+    }>;
+    /** Optimize one prompt; see {@link polish} for why the effort travels with the call. */
+    optimize(text: string, provider: string, model: string, context: string, effort: string, signal: AbortSignal): Promise<string>;
     private completePolish;
     private completeOptimize;
     /**
-     * Resolve the effective reasoning-effort wire config for one route. An
-     * explicit stored selection is forwarded as-is. The empty default means
-     * "thinking off": when the model advertises an `off` tier we send it, and
-     * otherwise we omit the field so the adapter's own default applies.
+     * Resolve the effective reasoning-effort wire config for one route.
+     *
+     * An effort the model actually advertises is forwarded as-is. Anything else —
+     * the empty default, or a tier that belongs to the model the user was on
+     * before switching (the route now follows the composer) — falls back to this
+     * plugin's "thinking off" policy: the `off` tier when the model exposes one,
+     * otherwise no `reasoningEffort` field at all so the adapter's own default
+     * applies. Forwarding an unadvertised tier would make the adapter reject the
+     * whole call, which is exactly what a stale effort used to do after a switch.
      */
     private resolveEffortConfig;
 }

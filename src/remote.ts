@@ -13,8 +13,8 @@ declare module '@deepseek-ai/dsh-typert-protocol' {
     resolveModelEfforts: (provider: string, model: string) => Promise<RemoteResult<{ efforts: readonly ReasoningEffortInfo[]; defaultEffort?: string }>>
     getAbout: () => Promise<RemoteResult<AboutInfoWire>>
     checkForUpdate: (signal?: AbortSignal) => Promise<RemoteResult<UpdateCheckResultWire>>
-    polish: (transcript: string, provider: string, model: string, signal?: AbortSignal) => Promise<RemoteResult<string>>
-    optimize: (text: string, provider: string, model: string, context: string, signal?: AbortSignal) => Promise<RemoteResult<string>>
+    polish: (transcript: string, provider: string, model: string, effort: string, signal?: AbortSignal) => Promise<RemoteResult<string>>
+    optimize: (text: string, provider: string, model: string, context: string, effort: string, signal?: AbortSignal) => Promise<RemoteResult<string>>
     templatesList: () => Promise<RemoteResult<{ templates: TemplateWire[] }>>
     templatesSave: (template: TemplateInputWire, signal?: AbortSignal) => Promise<RemoteResult<{ template: TemplateWire }>>
     templatesRemove: (id: string, signal?: AbortSignal) => Promise<RemoteResult<{ removed: boolean }>>
@@ -30,8 +30,8 @@ declare module '@deepseek-ai/dsh-typert-protocol' {
     'betterInput/resolveModelEfforts': (provider: string, model: string) => Promise<RemoteResult<{ efforts: readonly ReasoningEffortInfo[]; defaultEffort?: string }>>
     'betterInput/getAbout': () => Promise<RemoteResult<AboutInfoWire>>
     'betterInput/checkForUpdate': (signal?: AbortSignal) => Promise<RemoteResult<UpdateCheckResultWire>>
-    'betterInput/polish': (transcript: string, provider: string, model: string, signal?: AbortSignal) => Promise<RemoteResult<string>>
-    'betterInput/optimize': (text: string, provider: string, model: string, context: string, signal?: AbortSignal) => Promise<RemoteResult<string>>
+    'betterInput/polish': (transcript: string, provider: string, model: string, effort: string, signal?: AbortSignal) => Promise<RemoteResult<string>>
+    'betterInput/optimize': (text: string, provider: string, model: string, context: string, effort: string, signal?: AbortSignal) => Promise<RemoteResult<string>>
     'betterInput/templatesList': () => Promise<RemoteResult<{ templates: TemplateWire[] }>>
     'betterInput/templatesSave': (template: TemplateInputWire, signal?: AbortSignal) => Promise<RemoteResult<{ template: TemplateWire }>>
     'betterInput/templatesRemove': (id: string, signal?: AbortSignal) => Promise<RemoteResult<{ removed: boolean }>>
@@ -171,7 +171,8 @@ export const TYPERT_REMOTE: TypertRemoteContribution = {
       parameters: [
         { name: 'transcript', wire: 'transcript', source: 'json', codec: codec('string') },
         { name: 'provider', wire: 'provider', source: 'json', codec: codec('string') },
-        { name: 'model', wire: 'model', source: 'json', codec: codec('string') }
+        { name: 'model', wire: 'model', source: 'json', codec: codec('string') },
+        { name: 'effort', wire: 'effort', source: 'json', codec: codec('string') }
       ],
       cancellation: { parameter: 'signal' },
       result: codec('string')
@@ -186,7 +187,8 @@ export const TYPERT_REMOTE: TypertRemoteContribution = {
         { name: 'text', wire: 'text', source: 'json', codec: codec('string') },
         { name: 'provider', wire: 'provider', source: 'json', codec: codec('string') },
         { name: 'model', wire: 'model', source: 'json', codec: codec('string') },
-        { name: 'context', wire: 'context', source: 'json', codec: codec('string') }
+        { name: 'context', wire: 'context', source: 'json', codec: codec('string') },
+        { name: 'effort', wire: 'effort', source: 'json', codec: codec('string') }
       ],
       cancellation: { parameter: 'signal' },
       result: codec('string')

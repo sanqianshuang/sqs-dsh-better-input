@@ -12,8 +12,15 @@
  * out of the browser and never owned the audio. Recognising locally means we do
  * own the audio, hence the explicit format handling here.
  */
-/** Why capture could not start, for localized messaging by the caller. */
-export type CaptureFailureKind = 'unavailable' | 'permission' | 'interrupted';
+/**
+ * Why capture could not start, for localized messaging by the caller.
+ *
+ * `no-device` is separate from `unavailable` on purpose: `NotFoundError`
+ * (and `OverconstrainedError`) mean the *machine* has no usable input, which the
+ * user fixes by plugging a microphone in — not by changing the origin. Blaming
+ * HTTPS for a missing device sends them down the wrong path entirely.
+ */
+export type CaptureFailureKind = 'unavailable' | 'permission' | 'interrupted' | 'no-device';
 /** Capture failure whose `kind` the caller maps onto a localized string. */
 export declare class CaptureError extends Error {
     readonly kind: CaptureFailureKind;
@@ -74,3 +81,11 @@ export declare function encodeWave(samples: Float32Array): Uint8Array;
 export declare function audioBase64(bytes: Uint8Array): string;
 /** Linear resampling; adequate for a fallback path off the 16 kHz happy path. */
 export declare function resampleLinear(samples: Float32Array, fromRate: number, toRate: number): Float32Array;
+/**
+ * Classify a `getUserMedia` rejection into the kind the UI localizes.
+ *
+ * Exported for `check:routes`: the mapping is the difference between telling a
+ * user "connect a microphone" and blaming their origin for a missing device, and
+ * nothing else in the build can see it.
+ */
+export declare function toCaptureError(error: unknown): CaptureError;

@@ -7,6 +7,7 @@ import { checkForPluginUpdate, readInstalledAboutInfo, type AboutInfo, type Upda
 import { optimizeUserText, polishUserText, resolveOptimizeSystemPrompt, resolvePolishSystemPrompt, OPTIMIZE_SYSTEM_PROMPT, POLISH_SYSTEM_PROMPT } from './prompts.js'
 import type { TemplateInputWire, TemplateWire } from '../remote-contract.js'
 import { TemplateStore } from '../templates/store.js'
+import type { BetterInputTemplate } from '../templates/model.js'
 import { SettingsStore } from '../settings/store.js'
 
 export class BetterInputPolishService extends TypertRemoteService {
@@ -117,12 +118,20 @@ export class BetterInputPolishService extends TypertRemoteService {
     return checkForPluginUpdate({ installed: readInstalledAboutInfo().version, signal })
   }
 
-  async polish(transcript: string, provider: string, model: string, signal: AbortSignal): Promise<string> {
+  /**
+   * Polish one transcript.
+   *
+   * The route and the reasoning effort are supplied by the caller rather than
+   * read from the stored settings: the browser half resolves them from the
+   * composer's current model (see `src/client/composer-model.ts`) and falls back
+   * to the settings route when that is unreadable. An empty `effort` is the
+   * plugin's "thinking off" default, not a missing value.
+   */
+  async polish(transcript: string, provider: string, model: string, effort: string, signal: AbortSignal): Promise<string> {
     const raw = transcript.trim()
     if (raw === '' || raw.length > MAX_TRANSCRIPT_CHARACTERS || signal.aborted) return raw
     const settings = await this.settingsStore.load()
     const storedPrompt = settings.polishPrompt
-    const effort = settings.polishReasoningEffort
 
     const routeProvider = provider.trim()
     const routeModel = model.trim()
@@ -150,12 +159,45 @@ export class BetterInputPolishService extends TypertRemoteService {
     }
   }
 
-  async optimize(text: string, provider: string, model: string, context: string, signal: AbortSignal): Promise<string> {
+  /**
+   * List the saved prompt templates, newest first.
+   *
+   * `TemplateStore.list()` already sorts by `updatedAt` descending, so the
+   * wire order is the store order. This is the RPC the settings section and
+   * the `/` trigger source read from; without it the Typert gateway resolves
+   * the descriptor but finds no callable method on this service and fails the
+   * whole call with `gateway/method-unavailable` (see `toTemplateWire`).
+   */
+  async templatesList(): Promise<{ templates: TemplateWire[] }> {
+    const templates = await this.templateStore.list()
+    return { templates: templates.map(toTemplateWire) }
+  }
+
+  async templatesSave(template: TemplateInputWire, signal: AbortSignal): Promise<{ template: TemplateWire }> {
+    signal.throwIfAborted()
+    // Optional fields are omitted rather than passed as `undefined`: the store
+    // distinguishes "absent" (keep the existing value) from "empty string".
+    const saved = await this.templateStore.save({
+      name: template.name,
+      content: template.content,
+      ...(template.id === undefined ? {} : { id: template.id }),
+      ...(template.description === undefined ? {} : { description: template.description }),
+      ...(template.tags === undefined ? {} : { tags: [...template.tags] })
+    })
+    return { template: toTemplateWire(saved) }
+  }
+
+  async templatesRemove(id: string, signal: AbortSignal): Promise<{ removed: boolean }> {
+    signal.throwIfAborted()
+    return { removed: await this.templateStore.remove(id) }
+  }
+
+  /** Optimize one prompt; see {@link polish} for why the effort travels with the call. */
+  async optimize(text: string, provider: string, model: string, context: string, effort: string, signal: AbortSignal): Promise<string> {
     const raw = text.trim()
     if (raw === '' || raw.length > MAX_OPTIMIZE_CHARACTERS || signal.aborted) return raw
     const settings = await this.settingsStore.load()
     const storedPrompt = settings.optimizePrompt
-    const effort = settings.optimizeReasoningEffort
 
     const routeProvider = provider.trim()
     const routeModel = model.trim()
@@ -218,22 +260,52 @@ export class BetterInputPolishService extends TypertRemoteService {
 
 
   /**
-   * Resolve the effective reasoning-effort wire config for one route. An
-   * explicit stored selection is forwarded as-is. The empty default means
-   * "thinking off": when the model advertises an `off` tier we send it, and
-   * otherwise we omit the field so the adapter's own default applies.
+   * Resolve the effective reasoning-effort wire config for one route.
+   *
+   * An effort the model actually advertises is forwarded as-is. Anything else —
+   * the empty default, or a tier that belongs to the model the user was on
+   * before switching (the route now follows the composer) — falls back to this
+   * plugin's "thinking off" policy: the `off` tier when the model exposes one,
+   * otherwise no `reasoningEffort` field at all so the adapter's own default
+   * applies. Forwarding an unadvertised tier would make the adapter reject the
+   * whole call, which is exactly what a stale effort used to do after a switch.
    */
-  private async resolveEffortConfig(provider: string, model: string, storedEffort: string, signal: AbortSignal): Promise<{ provider: string; model: string; reasoningEffort?: never }> {
-    const selected = storedEffort.trim()
-    if (selected !== '') return { provider, model, reasoningEffort: selected as never }
+  private async resolveEffortConfig(provider: string, model: string, effort: string, signal: AbortSignal): Promise<{ provider: string; model: string; reasoningEffort?: never }> {
+    const selected = effort.trim()
     try {
       const resolved = await this.ctx.llm.resolveModelInfo(provider, model, signal)
       const efforts = resolved.reasoning?.efforts ?? []
-      const hasOff = efforts.some((effort) => String(effort.id) === 'off')
+      if (selected !== '' && efforts.some((tier) => String(tier.id) === selected)) {
+        return { provider, model, reasoningEffort: selected as never }
+      }
+      const hasOff = efforts.some((tier) => String(tier.id) === 'off')
       return hasOff ? { provider, model, reasoningEffort: 'off' as never } : { provider, model }
     } catch {
-      return { provider, model }
+      // No metadata to validate against: honour an explicit choice and omit the
+      // field for the empty default.
+      return selected === '' ? { provider, model } : { provider, model, reasoningEffort: selected as never }
     }
+  }
+}
+
+/**
+ * Project one stored template onto the wire shape declared by `TYPERT`.
+ *
+ * The store's model uses `readonly` members (including `readonly string[]`
+ * tags) while the Typert result schema is mutable, so the tags array is
+ * copied. Every field is always present: the gateway's JSON-safe boundary
+ * check rejects any own key holding `undefined` even after the Zod parse
+ * passes, so this projection must never emit one.
+ */
+function toTemplateWire(template: BetterInputTemplate): TemplateWire {
+  return {
+    id: template.id,
+    name: template.name,
+    description: template.description,
+    content: template.content,
+    tags: [...template.tags],
+    createdAt: template.createdAt,
+    updatedAt: template.updatedAt
   }
 }
 

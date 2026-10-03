@@ -110,6 +110,20 @@ file-input/OCR feature). Full forensics: [INCIDENT-20260925-typert-model.md](./I
 npm run check:typert
 ```
 
+Since 0.2.0-rc.2 that guard also asserts **implementation parity**: for every
+`{ kind: 'direct' }` invocation it reads the method names off the implementing class in
+`src/` and fails when the method is not there. This is the other silent failure of the same
+"four places, one missing" shape — manifest, RPC contract and browser UI all present, Host
+method never written — which passes every schema check, activates cleanly, and only fails
+when the user actually calls the RPC:
+
+```
+typert gateway: betterInput/templatesList: active Service "BetterInputPolish" has no callable method "templatesList"
+```
+
+(The template library shipped exactly that way in 0.2.0-rc.2.) The assertion reports
+`SKIP` when `src/` is absent, i.e. when the guard runs inside an installed tarball.
+
 When you add or remove an RPC method, update **all four** in lockstep:
 
 | Where | What |
@@ -120,7 +134,13 @@ When you add or remove an RPC method, update **all four** in lockstep:
 | `src/polish/service.ts` / `src/speech/service.ts` | the actual implementation (`BetterInputPolish` / `BetterInputSpeech`) |
 
 The Host manifest and the client face must mirror each other **method-for-method**;
-a mismatch is rejected at the boundary.
+a mismatch is rejected at the boundary. `check:typert` now compares the two faces
+endpoint-for-endpoint — method, wire names **in order**, and the cancellation parameter —
+because neither `tsc` (both are plain objects) nor the loader (it validates one face at a
+time) can see a parameter added to only one of them. The browser builds its args object from
+its own descriptor, so a missing wire field is rejected by `assertExactArguments` and an
+extra one shifts every positional argument: the service then reads a string where the
+`AbortSignal` belongs.
 
 ### 3. Keep zod out of the browser bundle
 
@@ -240,7 +260,7 @@ looks like next to the old full-bleed bar.
 npm install --legacy-peer-deps   # see note below
 npm run build                    # tsdown + d.ts emit
 npm run check                    # tsc --noEmit
-npm run verify                   # build + all four post-build guards  <-- run this
+npm run verify                   # build + all five post-build guards  <-- run this
 npm run dev:watch                # rebuild on change
 ```
 
@@ -355,7 +375,7 @@ compatibility preflight unless you read its **stderr**, where a demoted bundle a
 `dsh: skipping profile bundle …`. Check instead:
 
 ```sh
-npm run verify                                         # build + bundle + speech + typert + peers
+npm run verify                                         # build + bundle + speech + typert + routes + peers
 # and grep the startup log for:
 #   dsh: warning: N entry did not activate
 #   dsh: skipping profile bundle
@@ -389,6 +409,8 @@ src/client/              Browser half (bundled to lib/client.js)
   index.ts               slot registrations + lifecycle
   MicrophoneButton.tsx   mic in conversation.input.right (order 9999)
   OptimizeButton.tsx     ✨ in conversation.input.right (order 9998)
+  composer-model.ts      the composer's selected model (ctx.modelDirectories, optional)
+  native-voice-seat.ts   takes conversation.input.activity so dsh's own mic stops rendering
   VoiceRecognitionBar.tsx  status strip in conversation.input.dock (order 15)
   voice-session.ts       per-session state + the meter store (useSyncExternalStore)
   styles.ts              the plugin stylesheet (dock width convention — see rule 8)
@@ -424,6 +446,47 @@ src/client/              Browser half (bundled to lib/client.js)
 - The speech service looks up `ctx.get('speechToText')` lazily and must **not** list it in
   `static inject` — the plugin's settings page, prompt optimization and template library
   must keep working in a composition without the speech bundle (rule 1).
+- **Polish and prompt optimization follow the composer's model.** `composer-model.ts` reads
+  dsh's own per-session model directory (`ctx.modelDirectories.directoryFor(sessionId).store`)
+  lazily through `ctx.get()`, never through `inject`: the model-selection client plugin is
+  optional, and every assist must keep working without it (they then fall back to the route
+  configured in settings). Its shape is declared **structurally** rather than imported, so a
+  handful of field names adds no peer and no dev dependency. `resolveInputModelRoute()`
+  (`src/config.ts`) is the single decision point, and `npm run check:routes` guards both the
+  settings round-trip and that decision.
+  **Only the model follows; the thinking tier never does.** The effort travels on the wire
+  (`effort` on `polish` / `optimize`) but always comes from that feature's own
+  `polishReasoningEffort` / `optimizeReasoningEffort` setting. An earlier revision carried the
+  composer's effort along with its model, and that is a **cost** bug, not a consistency win:
+  the input box presents "model · effort" as one unit, so every polish and every ✨ click
+  silently started paying for whatever tier the conversation was on, with no control in the
+  plugin to turn it back down. `resolveEffortConfig()` only forwards a tier the model actually
+  advertises — a tier left over from the previous model would otherwise make the adapter
+  reject the whole call. Because the tier is enumerated per model, the settings page must
+  build the effort dropdown from the model that will **actually run** (the composer's while
+  following, the stored fallback otherwise).
+  The settings page is **session-less** (the framework hands it an empty `sessionId`), so it
+  uses `ComposerModelSource.activeFace()` instead of a per-session face: that tracks dsh's
+  main-view binding (`ctx.uiSession.current`, again `ctx.get()`, never `inject`) and
+  re-points the inner face on a Session switch. While a row follows the composer it renders
+  the composer's model **read-only** plus a "following" badge — an earlier revision bound the
+  row to the stored fallback route and merely disabled it, so the control never showed the
+  model actually in use and looked like "following is broken". The **effort** row, by
+  contrast, stays visible and editable while following — hiding it was how the cost bug
+  became unfixable from the UI.
+- **A capture failure must not be blamed on the origin.** `getUserMedia` rejects with
+  `NotFoundError` on a machine with no microphone, which is fixed by plugging a device in —
+  not by changing the page's origin. `toCaptureError()` (`src/client/audio-capture.ts`)
+  therefore maps it (and `OverconstrainedError`) to a distinct `no-device` kind with its own
+  string. It also reads `name` **structurally**, not via `instanceof DOMException`: a
+  cross-realm `DOMException` or a plain `Error` fails `instanceof` here and would silently
+  downgrade a denied permission to the generic sentence. `npm run check:routes` asserts the
+  full mapping and that the kinds stay disjoint.
+- **A failed `start()` must not strand the recognition bar.** `NativeSpeechSession.start()`
+  reports its failure through `onError` and then returns with the session inactive, so the
+  caller's `if (!session.active) return` used to leave the shared state on `starting` —
+  which the bar renders as "Listening…" for a recording that never began. The caller now
+  falls back to `idle` when the state is still `starting`.
 - Settings use a **self-owned JSON document**, not the settings API: `0.1.7` removed
   `settings.register(namespace, schema)` and `0.2.0-rc.2` still does not have it, so
   `SettingsForms` (which addresses profile entry ids, not plugin runtime toggles) remains
@@ -467,11 +530,32 @@ dsh `0.2.0` ships that capability as an **optional, off-by-default** bundle
 `@deepseek-ai/dsh-experimental-voice-input-bundle` (local SenseVoice + API speech-to-text).
 What stays true:
 
-- its own microphone registers in `conversation.input.activity`, this plugin's in
-  `conversation.input.right` — the two **slots** still do not collide, and both may be
-  enabled at once. **Their function now overlaps**: dsh's own mic also transcribes with the
-  same local provider, and it does so with a nicer setup/prepare flow.
-- What dsh's own mic does **not** do, and what justifies this plugin's microphone:
+- its own microphone registers in `conversation.input.activity`; this plugin's registers in
+  `conversation.input.right`, but **this plugin shadows the native seat away** while it is
+  active — see `src/client/native-voice-seat.ts`. Do not "fix" that by deleting the shadow:
+  with both visible the composer showed two microphones running the same local recognizer,
+  with nothing to tell them apart. (An earlier revision of this file claimed the two "may be
+  enabled at once" because the slots differ. They can — that is exactly the bug.)
+- **The shadow depends on two non-obvious registry rules.** Read them before touching
+  `native-voice-seat.ts`; both failures are silent and both cost an afternoon:
+  1. `conversation.input.activity` is `kind: 'single'`, and `entriesOfSlot()` returns the
+     **first entry in ascending priority order**, so taking the seat means registering
+     *below* the occupant (`priority: -1` vs the native default 0). Registering at the same
+     priority throws instead.
+  2. The slot **does not exist when this plugin activates**: `dsh-client-ui-conversation`
+     declares it inside `slots.inject('main', …)`, three declaration layers deep. A bare
+     `slots.register` therefore throws `slot "…" is not declared`; it must go through
+     `slots.inject(key, cb)`, which runs the callback when the declaration appears.
+  3. The entry's `inject` must return an **object**. The outlet feeds every inject face
+     through `bindInjectSources()`, which reads `face['hooks']` first: returning `undefined`
+     throws `TypeError: Cannot read properties of undefined (reading 'hooks')`, and the
+     entry-boundary error handler **abdicates** the entry, so the shadow silently stops
+     working while the code looks correct. The component must also render a real element
+     (an empty `Fragment`), not `null`.
+  Diagnosing 3 is the hard part: the crash does **not** appear when you re-read the console
+  afterwards. Hook `console.error` via `Page.addScriptToEvaluateOnNewDocument` and reload.
+  `npm run check:routes` guards the priority, the slot name and the mount site.
+- What dsh's own mic does **not** do, and what justifies this plugin keeping its own:
   it inserts the transcript and stops there. This plugin adds **segment-level streaming while
   you speak**, **AI polishing of the finished transcript**, prompt optimization and the
   template library.
@@ -504,7 +588,7 @@ Two consequences to keep in mind when touching any of this:
 ## Before you call a change done
 
 ```sh
-npm run verify        # must pass: build, bundle, speech-audio, typert and peer guards
+npm run verify        # must pass: build, bundle, speech-audio, typert, routes and peer guards
 ```
 
 Then boot the plugin once in a throwaway profile (`$DSH_HOME` probe above) and confirm it is

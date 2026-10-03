@@ -15,6 +15,8 @@ import { OptimizeButton } from './OptimizeButton.js'
 import { VoiceRecognitionBar } from './VoiceRecognitionBar.js'
 import { BetterInputSettingsSection } from './settings.jsx'
 import { SettingsController, useSettingsSnapshot } from './settings-controller.js'
+import { ComposerModelSource } from './composer-model.js'
+import { shadowNativeVoiceInput } from './native-voice-seat.js'
 import { createTemplatesSource } from './templates-source.js'
 import { TemplatesController } from './templates-controller.js'
 import { TemplatesSection } from './templates-section.jsx'
@@ -43,6 +45,9 @@ export async function apply(ctx: ClientContext): Promise<() => Promise<void>> {
     const remote = remoteCtx.remote.betterInput as BetterInputRemote
     const controller = new SettingsController(remote)
     const templatesController = new TemplatesController(remote)
+    // Watches dsh's own per-session model selection so polish and optimize can
+    // follow the model shown in the input box. Survives an absent service.
+    const composerModels = new ComposerModelSource(ctx)
 
     const voiceSessions = new Map<string, VoiceInputSession>()
     const voiceSessionFor = (sessionId: string): VoiceInputSession => {
@@ -64,6 +69,7 @@ export async function apply(ctx: ClientContext): Promise<() => Promise<void>> {
       disposeTemplatesSource()
       controller.dispose()
       templatesController.dispose()
+      composerModels.dispose()
     }, 'sqs-dsh-better-input sessions lifecycle')
 
     // Inject the plugin stylesheet (recognition bar layout, pulse and spinner).
@@ -80,6 +86,16 @@ export async function apply(ctx: ClientContext): Promise<() => Promise<void>> {
     void controller.refreshSettings()
     void controller.refreshRoutes()
     void templatesController.ensureLoaded()
+
+    // Take the composer's single voice-input seat so dsh's own microphone stops
+    // rendering beside ours (see native-voice-seat.ts). Best-effort: a failure
+    // logs and leaves the native button visible rather than failing activation.
+    remoteCtx.effect(() => {
+      const disposeShadow = shadowNativeVoiceInput(remoteCtx, (message) => {
+        console.warn(`sqs-dsh-better-input: could not take the native voice-input seat (${message}); dsh's own microphone stays visible`)
+      })
+      return () => disposeShadow?.()
+    }, 'sqs-dsh-better-input native voice-input seat')
 
     const useSettings = (): SettingsFace => {
       const snapshot = useSettingsSnapshot(controller)
@@ -114,9 +130,10 @@ export async function apply(ctx: ClientContext): Promise<() => Promise<void>> {
           id: 'better-input-optimize',
           order: 9998,
           locale: BETTER_INPUT_NS,
-          inject: () => ({
+          inject: (sessionId) => ({
             remote,
-            useSettings
+            useSettings,
+            composerModel: composerModels.faceFor(sessionId)
           })
         },
         OptimizeButton
@@ -136,7 +153,8 @@ export async function apply(ctx: ClientContext): Promise<() => Promise<void>> {
           inject: (sessionId) => ({
             remote,
             voiceSession: voiceSessionFor(sessionId),
-            useSettings
+            useSettings,
+            composerModel: composerModels.faceFor(sessionId)
           })
         },
         MicrophoneButton
@@ -152,7 +170,10 @@ export async function apply(ctx: ClientContext): Promise<() => Promise<void>> {
           // Thunk so the sidebar row follows the active locale on switches.
           label: () => ctx.locale.bind(BETTER_INPUT_NS)('settingsTitle'),
           locale: BETTER_INPUT_NS,
-          inject: () => ({ settingsController: controller })
+          // The settings page is session-less, so it takes the model-selection
+          // *source* rather than one session's face and shows whichever Session
+          // the composer is currently on.
+          inject: () => ({ settingsController: controller, composerModels })
         },
         BetterInputSettingsSection
       )

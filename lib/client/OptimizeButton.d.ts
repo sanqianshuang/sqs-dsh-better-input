@@ -2,6 +2,7 @@ import type { SnapshotSelectorHook, TranslateNS } from '@deepseek-ai/dsh-client-
 import type { InputState } from '@deepseek-ai/dsh-client-ui-conversation/client';
 import type { ChatSnapshot } from '@deepseek-ai/dsh-client-ui-chat/client';
 import type { BetterInputRemote } from '../remote.js';
+import type { ComposerModelFace } from './composer-model.js';
 import type { SettingsFace } from './MicrophoneButton.js';
 /** The framework-injected `t` seat for the BetterInput namespace. */
 type Translate = TranslateNS<'better-input'>;
@@ -20,6 +21,8 @@ export type OptimizeButtonProps = {
     };
     readonly remote: BetterInputRemote;
     readonly useSettings: () => SettingsFace;
+    /** The composer's selected model for this Session (see composer-model.ts). */
+    readonly composerModel: ComposerModelFace;
     readonly t: Translate;
 };
 /**
@@ -29,5 +32,5 @@ export type OptimizeButtonProps = {
  * the original and optimized text. The draft is replaced only when the user
  * clicks "Adopt".
  */
-export declare function OptimizeButton({ useChat, useInput, inputActions, remote, useSettings, t }: OptimizeButtonProps): import("react").JSX.Element;
+export declare function OptimizeButton({ useChat, useInput, inputActions, remote, useSettings, composerModel, t }: OptimizeButtonProps): import("react").JSX.Element;
 export {};

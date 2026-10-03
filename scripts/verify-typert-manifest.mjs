@@ -24,7 +24,7 @@
  */
 
 import { pathToFileURL } from 'node:url'
-import { existsSync } from 'node:fs'
+import { existsSync, readdirSync, readFileSync } from 'node:fs'
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
@@ -157,6 +157,104 @@ const validateTypertManifest = (pkgName, exported) => {
 }
 // -----------------------------------------------------------------------------
 
+// --- implementation parity: TYPERT ↔ the real service classes ------------------
+//
+// The validator above checks the manifest's *shape*. That is not enough: for a
+// `{ kind: 'direct' }` invocation the gateway resolves
+//
+//     const implementation = descriptor.implementation ?? descriptor.method
+//     const method = Reflect.get(callReceiver, implementation)
+//
+// against the live service instance (`@deepseek-ai/dsh-api-gateway/lib/index.js`,
+// "gateway/method-unavailable"). A method that exists in `TYPERT` — and in
+// `TYPERT.model.services[].members` — but never on the class passes every schema
+// check, composes, activates cleanly, and only fails when the user actually
+// calls it:
+//
+//     typert gateway: betterInput/templatesList: active Service
+//     "BetterInputPolish" has no callable method "templatesList"
+//
+// That is exactly how the template library shipped broken in 0.2.0-rc.2: the
+// manifest, the client face, the RPC contract and the browser UI were all
+// present, and only the Host methods were missing. `tsc` cannot see it because
+// the manifest is a plain object; the loader cannot see it because it never
+// calls the method. So the method names are read from the classes themselves.
+
+/** Every non-declaration `.ts` file under a directory, recursively. */
+function sourceFiles(root) {
+  const found = []
+  for (const entry of readdirSync(root, { withFileTypes: true })) {
+    const path = resolve(root, entry.name)
+    if (entry.isDirectory()) found.push(...sourceFiles(path))
+    else if (entry.isFile() && entry.name.endsWith('.ts') && !entry.name.endsWith('.d.ts')) found.push(path)
+  }
+  return found
+}
+
+/**
+ * The method names declared directly in `export class <exportName>`.
+ *
+ * Class members in this repo are indented by exactly two spaces and method
+ * bodies by four or more, so an indentation anchor is enough to distinguish a
+ * member declaration from a statement inside one — no parser needed, which
+ * keeps this guard runnable with no dependencies.
+ */
+function declaredMethods(source, exportName) {
+  const anchor = source.search(new RegExp(`^export\\s+class\\s+${exportName}\\b`, 'm'))
+  if (anchor === -1) return undefined
+  const close = source.indexOf('\n}', anchor)
+  const body = source.slice(anchor, close === -1 ? source.length : close)
+  const methods = new Set()
+  const member = /^ {2}(?:(?:public|private|protected|static|readonly|async|override|get|set)\s+)*([A-Za-z_$][\w$]*)\s*[(<]/gm
+  for (const match of body.matchAll(member)) methods.add(match[1])
+  return methods
+}
+
+const srcRoot = resolve(here, '..', 'src')
+
+function verifyImplementationParity(manifest) {
+  const problems = []
+  const sources = sourceFiles(srcRoot).map((path) => ({ path, text: readFileSync(path, 'utf8') }))
+  const services = new Map()
+  for (const service of manifest.model.services) {
+    const file = sources.find((candidate) => declaredMethods(candidate.text, service.exportName) !== undefined)
+    services.set(service.key, {
+      exportName: service.exportName,
+      file: file?.path,
+      methods: file === undefined ? undefined : declaredMethods(file.text, service.exportName),
+      members: new Set(
+        (Array.isArray(service.members) ? service.members : [])
+          .filter((member) => member?.kind === 'method')
+          .map((member) => member.name)
+      )
+    })
+  }
+  for (const invocation of manifest.invocations) {
+    // `context` receivers resolve `implementation` elsewhere; only `direct`
+    // invocations are bound to the service class.
+    if (invocation?.invocation?.kind !== 'direct') continue
+    const service = services.get(invocation.service)
+    if (service === undefined) {
+      problems.push(`invocation "${invocation.id}" names service "${invocation.service}", which TYPERT.model.services does not declare`)
+      continue
+    }
+    if (!service.members.has(invocation.method)) {
+      problems.push(`invocation "${invocation.id}" calls ${invocation.service}.${invocation.method}(), but that service's TYPERT.model members do not list it`)
+      continue
+    }
+    if (service.methods === undefined) {
+      problems.push(`service ${service.exportName} was not found under src/ — cannot prove ${invocation.service}.${invocation.method}() is implemented`)
+      continue
+    }
+    if (!service.methods.has(invocation.method)) {
+      const where = service.file === undefined ? service.exportName : service.file.slice(resolve(here, '..').length + 1)
+      problems.push(`invocation "${invocation.id}" calls ${invocation.service}.${invocation.method}(), but ${where} declares no such method — dsh fails the call with gateway/method-unavailable`)
+    }
+  }
+  return problems
+}
+// -----------------------------------------------------------------------------
+
 const candidates = [
   process.env.DSH_TYPERT_LOADER,
   '/usr/local/lib/node_modules/@deepseek-ai/dsh/node_modules/@deepseek-ai/dsh-typert-loader/lib/index.js'
@@ -207,8 +305,85 @@ for (const [label, validate] of [
   }
 }
 
+if (existsSync(srcRoot)) {
+  const problems = verifyImplementationParity(manifest)
+  if (problems.length === 0) {
+    console.log('PASS  implementation parity (TYPERT invocations ↔ src/ service classes)')
+  } else {
+    for (const problem of problems) {
+      failures.push(`implementation: ${problem}`)
+      console.log(`FAIL  implementation: ${problem}`)
+    }
+  }
+} else {
+  console.log('SKIP  implementation parity: src/ is not present (the npm tarball ships lib/ only)')
+}
+
+// --- client face parity: TYPERT_REMOTE ↔ TYPERT -------------------------------
+//
+// The Host manifest and the browser face are written in two different files
+// (`src/typert.ts` / `src/remote.ts`) and dsh only checks each one's shape. A
+// parameter added to one side and not the other is not caught by `tsc` (both are
+// plain objects) and lands at call time: the browser builds its args object from
+// its OWN descriptor, so a missing wire field is rejected by the gateway's
+// `assertExactArguments` and an extra one shifts every positional argument — the
+// service then reads a string where the AbortSignal belongs. Compare the two
+// faces endpoint-for-endpoint: same methods, same wire names, same order, same
+// cancellation parameter.
+const remoteTarget = resolve(here, '..', 'lib/remote.js')
+if (!existsSync(remoteTarget)) {
+  console.log('SKIP  client face parity: lib/remote.js is not present (run the build first)')
+} else {
+  const clientFace = (await import(pathToFileURL(remoteTarget).href)).TYPERT_REMOTE ?? (await import(pathToFileURL(remoteTarget).href)).default
+  const problems = []
+  const faceOf = (value) => {
+    const map = new Map()
+    // The Host manifest calls its descriptors `invocations`; the client face
+    // calls them `descriptors`. Everything else about the shape is identical.
+    const entries = Array.isArray(value?.invocations)
+      ? value.invocations
+      : Array.isArray(value?.descriptors) ? value.descriptors : []
+    for (const descriptor of entries) {
+      map.set(descriptor.id, {
+        service: descriptor.service,
+        namespace: descriptor.namespace,
+        method: descriptor.method,
+        invocation: descriptor.invocation?.kind,
+        wires: (Array.isArray(descriptor.parameters) ? descriptor.parameters : []).map((parameter) => parameter.wire).join(','),
+        cancellation: descriptor.cancellation?.parameter ?? null
+      })
+    }
+    return map
+  }
+  const host = faceOf(manifest)
+  const client = faceOf(clientFace)
+  for (const [id, hostFace] of host) {
+    const clientShape = client.get(id)
+    if (clientShape === undefined) {
+      problems.push(`${id} is missing from the client face (lib/remote.js TYPERT_REMOTE) — the browser cannot call it`)
+      continue
+    }
+    for (const key of ['service', 'namespace', 'method', 'invocation', 'wires', 'cancellation']) {
+      if (hostFace[key] !== clientShape[key]) {
+        problems.push(`${id} declares ${key}=${JSON.stringify(hostFace[key])} on the Host but ${JSON.stringify(clientShape[key])} on the client`)
+      }
+    }
+  }
+  for (const id of client.keys()) {
+    if (!host.has(id)) problems.push(`${id} exists only on the client face — the Host would reject the call as an unknown endpoint`)
+  }
+  if (problems.length === 0) {
+    console.log(`PASS  client face parity (${host.size} endpoints mirror method-for-method)`)
+  } else {
+    for (const problem of problems) {
+      failures.push(`client face: ${problem}`)
+      console.log(`FAIL  client face: ${problem}`)
+    }
+  }
+}
+
 if (failures.length > 0) {
-  console.error(`\n${failures.length} typert manifest check(s) failed — dsh would refuse to activate this entry.`)
+  console.error(`\n${failures.length} typert check(s) failed — dsh would refuse to activate this entry, or fail the call at runtime.`)
   process.exit(1)
 }
 
