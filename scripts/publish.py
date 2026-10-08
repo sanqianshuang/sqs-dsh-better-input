@@ -644,7 +644,12 @@ def main(argv=None) -> int:
     url = git_remote_url(args.remote)
     say("")
     say("=" * 64)
-    say("演练完成（--dry-run：文件、registry、git 都没有改动）" if dry else "发布完成")
+    if dry:
+        say("演练完成（--dry-run：文件、registry、git 都没有改动）")
+    elif args.no_publish:
+        say("提交完成（按 --no-publish 未发布到 npm）")
+    else:
+        say("发布完成")
     say("=" * 64)
     say(f"  包名     : {name}")
     say(f"  版本     : {target}")

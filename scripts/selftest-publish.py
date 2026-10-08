@@ -27,9 +27,16 @@ from urllib.parse import unquote
 REPO = Path(__file__).resolve().parent.parent
 PUBLISH = REPO / "scripts" / "publish.py"
 PKG = "sqs-dsh-better-input"
-OLD = "0.2.0-rc.2-sqs.4"
-NEW = "0.2.0-rc.2-sqs.5"
 MESSAGE = "release: selftest —— 端到端演练"
+
+# Derive the expected next version from the repository itself, so this stays
+# valid across releases (an independent copy of the -sqs.N rule on purpose).
+OLD = json.loads((REPO / "package.json").read_text(encoding="utf-8"))["version"]
+_trail = re.fullmatch(r"(.+-sqs\.)(\d+)", OLD)
+if not _trail:  # pragma: no cover - the repository always publishes -sqs.N
+    print(f"当前版本不是 -sqs.N 形态，自检无法推断下一个版本号：{OLD}")
+    raise SystemExit(1)
+NEW = f"{_trail.group(1)}{int(_trail.group(2)) + 1}"
 
 for _stream in (sys.stdout, sys.stderr):
     try:
