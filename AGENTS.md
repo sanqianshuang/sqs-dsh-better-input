@@ -23,6 +23,13 @@ export DSH_HOME=/tmp/probe       # honoured by dsh; proves composition without t
 # healthy: silent. broken: "1 entry did not activate" / "skipping profile bundle" on STDERR, exit still 0
 ```
 
+Releasing is one command — never hand-edit the version, `npm publish` by hand, or forget the
+push (that is how the registry drifted a version behind the tree):
+
+```sh
+python scripts/publish.py --bump sqs -m "release: <version> —— <说明>"
+```
+
 ## Hard rules
 
 1. **Never let a peer range exclude the running dsh runtime.** `dsh-app-boot` evaluates peers with

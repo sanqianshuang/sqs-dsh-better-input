@@ -618,6 +618,8 @@ def main(argv=None) -> int:
         if args.no_publish:
             warn("按 --no-publish 跳过 npm 发布。")
         else:
+            if dry and target != current:
+                warn(f"演练不改 package.json，下面 tarball 预览仍是 {current}；正式运行发的是 {target}。")
             do_publish(npm, env, args, name, target, tag, dry)
             if not dry and args.wait > 0 and not args.skip_registry_check:
                 step(f"等待 registry 生效（≤{args.wait}s）")
