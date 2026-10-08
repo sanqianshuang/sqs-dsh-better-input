@@ -22,7 +22,7 @@
 
 ## ⚠️ 关于这个版本（二次开发说明）
 
-本仓库是 [`dsh-better-input`](https://github.com/DIAG5/dsh-better-input)（MIT）的**二次开发版本**，由 **sanqianshuang** 维护。当前版本 **`0.2.0-rc.2-sqs.1`** —— 前面的 `0.2.0-rc.2` 表示**它适配的 DSH 主线版本**，后缀 `-sqs.N` 表示**本仓库自行发布的第 N 次修订**。DSH 主线版本不变时前半段不动，所以版本号仍能一眼看出该装哪一版（`0.1.0` 适配的是 DSH `0.1.7-rc.2`），同时每次重新发布又能拿到唯一的 npm 版本号。与原版的主要差别：
+本仓库是 [`dsh-better-input`](https://github.com/DIAG5/dsh-better-input)（MIT）的**二次开发版本**，由 **sanqianshuang** 维护。当前版本 **`0.2.0-rc.2-sqs.4`** —— 前面的 `0.2.0-rc.2` 表示**它适配的 DSH 主线版本**，后缀 `-sqs.N` 表示**本仓库自行发布的第 N 次修订**。DSH 主线版本不变时前半段不动，所以版本号仍能一眼看出该装哪一版（`0.1.0` 适配的是 DSH `0.1.7-rc.2`），同时每次重新发布又能拿到唯一的 npm 版本号。与原版的主要差别：
 
 | 变更 | 说明 |
 | --- | --- |
@@ -241,6 +241,22 @@ npm run verify   # 构建 + 三条构建后守卫（bundle / typert / peers）�
 ```
 
 改 Client 端：`npm run dev:watch` 后刷新 UI；改 Host 端：重启 `dsh web`。
+
+### 发布
+
+```sh
+python scripts/publish.py --bump sqs -m "release: 0.2.0-rc.2-sqs.5 —— 修了什么"
+```
+
+一条命令跑完：`npm run verify`（构建 + 守卫）→ 升版本（`package.json` 与 README 里的版本号
+一起改）→ release 提交 → `npm publish`（预发布打 `next`，并把 `latest` 一并指过来）→ `git push`。
+npm 令牌取自已登录的凭据，或 `--token` / `$NPM_TOKEN` / 仓库上一级的 `npm.txt`，只写进临时
+`.npmrc`，退出即删。常用开关：`--dry-run`（零改动演练）、`--no-publish --no-verify`（只提交并
+推送）、`--dsh-base 0.2.0-rc.3`（换 DSH 主线基线，版本重置为 `-sqs.1`）。
+
+```sh
+python scripts/selftest-publish.py   # 在本地假 registry 上跑完整链路，不碰真 npm / 真 origin
+```
 
 ## 🏗️ 架构
 

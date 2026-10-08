@@ -356,6 +356,46 @@ CALL-PROBE routes0=deepseek-official/deepseek-flash count=32
 
 ## Operational recipes
 
+### Releasing (`scripts/publish.py`)
+
+One command moves the four things that only stay correct together: the version in
+`package.json`, the built `lib/` that npm ships, the registry, and git.
+
+```sh
+python scripts/publish.py --bump sqs -m "release: 0.2.0-rc.2-sqs.5 —— …"
+python scripts/publish.py --dry-run                  # plan, tarball preview, no mutation
+python scripts/publish.py --no-publish --no-verify    # commit + push only
+python scripts/publish.py --dsh-base 0.2.0-rc.3       # retarget, reset to -sqs.1
+```
+
+Order matters and is fixed: **verify+build → bump → commit → publish → push**. The
+commit therefore contains the same `lib/` the tarball was built from, and a failed
+publish leaves the release commit local instead of public. `--bump sqs` increments
+the trailing `-sqs.N` and rewrites the README prose pin (`当前版本 **\`x\`**`), which
+also repairs a pin that had already gone stale.
+
+Two registry behaviours the script has to absorb:
+
+- **npm refuses a prerelease without an explicit `--tag`** ("You must specify a tag
+  using --tag when publishing a prerelease version"), so the script always passes
+  one - `next` for a prerelease, `latest` otherwise - and then also points `latest`
+  at it (`--no-also-latest` to opt out), matching how `sqs.1` was published.
+- **A publish is accepted asynchronously** (`PUT` → `202`, "This change is being
+  processed"). The read side (`GET /<pkg>/<version>`, dist-tags) lags by minutes, so
+  the script polls until the version is readable (`--wait`, default 180 s). Do not
+  read "not found" right after a successful publish as a failure.
+
+The token comes from `--token`, `$NPM_TOKEN` / `$NODE_AUTH_TOKEN`, or the token file
+(default `../npm.txt`, outside the repository). It is written to a throwaway
+`.npmrc` in a temp dir that is deleted on exit, and every npm command runs with
+`npm_config_cache` / `npm_config_logs_dir` / `TEMP` redirected into that same temp
+dir, so nothing lands in `~/.npm` or the repository. Echoed commands are redacted.
+
+`scripts/selftest-publish.py` exercises the whole chain without touching npm: it
+serves a minimal registry API on 127.0.0.1, clones the repository into a temp dir
+with its own bare remote, runs one release there, and asserts registry + git +
+README state (it also asserts this repository was not modified).
+
 ### Retargeting to a new dsh version
 
 The whole surface is in `package.json`: the `@deepseek-ai/dsh-*` **peer ranges**, their
