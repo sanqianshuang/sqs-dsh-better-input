@@ -220,7 +220,7 @@ export const TYPERT = {
    * This is REQUIRED by dsh's typert loader, not optional metadata:
    * `validateTypertManifest` reads `manifest.model` and demands an object whose
    * `services` / `events` / `objects` are arrays (see `dsh-typert-loader/lib/index.js`
-   * :89-92, and `requireObject` at :119-122 — unchanged in 0.2.0-rc.2). A missing
+   * :89-92, and `requireObject` at :119-122 — unchanged in 0.2.1-rc.2). A missing
    * `model` fails the whole
    * entry with "typert-loader: <pkg> TYPERT.model must be an object", the entry
    * never activates, and the browser web boot then refuses to render the UI.

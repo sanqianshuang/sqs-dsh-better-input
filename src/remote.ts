@@ -52,8 +52,8 @@ declare module '@deepseek-ai/dsh-typert-protocol' {
  *
  * The client face exists only to describe the wire shape to
  * `ctx.remote.$mount`; the actual byte validation happens on the Host. This is
- * not an assumption — it is how dsh is wired (verified as recently as
- * 0.2.0-rc.2; the client carrier below is byte-identical to 0.1.7-rc.2):
+ * not an assumption — it is how dsh is wired (re-verified on
+ * 0.2.1-rc.2: the client bundle still calls no codec factory):
  *
  *   - `@deepseek-ai/dsh-api-gateway/lib/index.js` (Host) is the ONLY place that
  *     runs `codec.create().parse(value)`. Validation lives in `decode()`.

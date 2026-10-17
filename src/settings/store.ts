@@ -13,7 +13,7 @@
  * This plugin therefore owns its settings in a plain JSON document, exactly like
  * the template library. That keeps it independent of the settings API churn,
  * keeps writes atomic, and keeps the settings page a normal `settings.section`
- * slot (unchanged in 0.2.0-rc.2, the current target).
+ * slot (unchanged in 0.2.1-rc.2, the current target).
  */
 
 import { readFile, rename } from 'node:fs/promises'

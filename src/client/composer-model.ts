@@ -442,6 +442,40 @@ export class ComposerModelSource {
   }
 
   /**
+   * Resolve dsh's generated `remote.session` namespace lazily, as an optional
+   * service.
+   *
+   * A Remote namespace is a Cordis Service keyed `remote.<namespace>` (see
+   * `remoteServiceKey()` in `@deepseek-ai/dsh-api-gateway` → `client.browser.js`),
+   * so it must be read through `ctx.get()` like every other optional service.
+   * Reading it as a property (`ctx.remote.session`) throws
+   * `cannot get property "remote.session" without inject` on Cordis 4.x — the
+   * context proxy refuses a namespace that is not in `inject`, and this plugin
+   * deliberately does not inject it (the catalog is a convenience fallback, not a
+   * reason to gate the whole browser half). That throw used to escape from
+   * `readFor()` during render and surface as an uncaught page error on any face
+   * with no live directory (notably the session-less settings page).
+   *
+   * `ctx.get()` answers `undefined` for a service that is not present, which is
+   * exactly the "no model catalog" degradation this fallback already handles.
+   * The shape stays structural (see the header) — importing the generated
+   * namespace type would tie the browser half to the session-controller package.
+   */
+  private sessionCatalogRemote(): SessionCatalogRemoteLike | undefined {
+    const lookup = this.ctx as unknown as { get(name: string): unknown }
+    let service: unknown
+    try {
+      service = lookup.get('remote.session')
+    } catch {
+      return undefined
+    }
+    if (service === null || typeof service !== 'object') return undefined
+    const modelCatalog = (service as { modelCatalog?: unknown }).modelCatalog
+    if (typeof modelCatalog !== 'function') return undefined
+    return service as SessionCatalogRemoteLike
+  }
+
+  /**
    * Fetch the Host model catalog once, for the last-resort default route.
    *
    * Failure is not an error worth surfacing: the assists keep working from the
@@ -451,8 +485,7 @@ export class ComposerModelSource {
   private ensureCatalog(): void {
     if (this.catalogRequested || this.disposed) return
     this.catalogRequested = true
-    const lookup = this.ctx as unknown as { remote?: { session?: SessionCatalogRemoteLike } }
-    const remote = lookup.remote?.session
+    const remote = this.sessionCatalogRemote()
     if (remote === undefined) return
     void remote
       .modelCatalog()

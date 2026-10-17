@@ -2,7 +2,7 @@
 
 `sqs-dsh-better-input` — a DeepSeek Harness (dsh) plugin: voice input, AI polishing,
 prompt optimization, local prompt templates. Fork of MIT `dsh-better-input`, retargeted at
-dsh `0.2.0-rc.2`. Two fork rules: features dsh now ships natively are **removed**, not
+dsh `0.2.1-rc.2`. Two fork rules: features dsh now ships natively are **removed**, not
 duplicated; APIs dsh removed are migrated away from.
 
 > Keep this file minimal — it is auto-loaded into every agent session, so every line is a
@@ -35,7 +35,7 @@ python scripts/publish.py --bump sqs -m "release: <version> —— <说明>"
 1. **Never let a peer range exclude the running dsh runtime.** `dsh-app-boot` evaluates peers with
    `semver.satisfies(v, range, { includePrerelease: true })` and silently **demotes the whole
    bundle** on mismatch. `<0.2.0-0` excludes every prerelease of 0.2.0 — use
-   `>=0.2.0-rc.2 <0.3.0-0`. Keep dev pins at the exact runtime version.
+   `>=0.2.1-rc.2 <0.3.0-0`. Keep dev pins at the exact runtime version.
    - A peer can be needed with no `import` — types reachable from a peer's `.d.ts` count.
    - A **type-only** import must be a **dev dep**, never a peer.
    - Optional dsh services: `ctx.get('name')`, **never** `static inject`.

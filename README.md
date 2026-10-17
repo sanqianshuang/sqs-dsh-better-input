@@ -22,11 +22,12 @@
 
 ## ⚠️ 关于这个版本（二次开发说明）
 
-本仓库是 [`dsh-better-input`](https://github.com/DIAG5/dsh-better-input)（MIT）的**二次开发版本**，由 **sanqianshuang** 维护。当前版本 **`0.2.0-rc.2-sqs.4`** —— 前面的 `0.2.0-rc.2` 表示**它适配的 DSH 主线版本**，后缀 `-sqs.N` 表示**本仓库自行发布的第 N 次修订**。DSH 主线版本不变时前半段不动，所以版本号仍能一眼看出该装哪一版（`0.1.0` 适配的是 DSH `0.1.7-rc.2`），同时每次重新发布又能拿到唯一的 npm 版本号。与原版的主要差别：
+本仓库是 [`dsh-better-input`](https://github.com/DIAG5/dsh-better-input)（MIT）的**二次开发版本**，由 **sanqianshuang** 维护。当前版本 **`0.2.1-rc.2-sqs.1`** —— 前面的 `0.2.1-rc.2` 表示**它适配的 DSH 主线版本**，后缀 `-sqs.N` 表示**本仓库自行发布的第 N 次修订**。DSH 主线版本不变时前半段不动，所以版本号仍能一眼看出该装哪一版（`0.1.0` 适配的是 DSH `0.1.7-rc.2`），同时每次重新发布又能拿到唯一的 npm 版本号。与原版的主要差别：
 
 | 变更 | 说明 |
 | --- | --- |
-| 🔧 **修复「插件被 DSH 静默丢弃」（关键）** | `0.1.0` 声明的 peer 范围是 `>=0.1.7-rc.2 <0.2.0-0`，而 `0.2.0-rc.2` **不满足** `<0.2.0-0`（`0.2.0-0` 是 `0.2.0` 的最小 prerelease）。DSH 的兼容性预检因此把整个 bundle 降级丢弃——插件完全没加载，Host 服务、麦克风按钮、设置页全部消失，而 `npm run build` / `tsc` / 各构建守卫**全部照常通过**。现收紧为 `>=0.2.0-rc.2 <0.3.0-0`，并新增 `npm run check:peers` 守卫（以 DSH 自身的兼容性判定为准）防复发。 |
+| 🔧 **修复「插件被 DSH 静默丢弃」（关键）** | `0.1.0` 声明的 peer 范围是 `>=0.1.7-rc.2 <0.2.0-0`，而 `0.2.0-rc.2` **不满足** `<0.2.0-0`（`0.2.0-0` 是 `0.2.0` 的最小 prerelease）。DSH 的兼容性预检因此把整个 bundle 降级丢弃——插件完全没加载，Host 服务、麦克风按钮、设置页全部消失，而 `npm run build` / `tsc` / 各构建守卫**全部照常通过**。现收紧为 `>=0.2.1-rc.2 <0.3.0-0`，并新增 `npm run check:peers` 守卫（以 DSH 自身的兼容性判定为准）防复发。 |
+| 🔌 **适配 DSH `0.2.1-rc.2`** | 语音、输入触发器（`/` 模板菜单）、✨ 优化按钮与两个设置分区在 dsh `0.2.1-rc.2` 上重新逐项验证通过。修复一处会抛到页面的错误：无会话界面（如设置页）回退读取 dsh 的模型目录默认值时，把生成的 Remote 命名空间当成属性访问（`ctx.remote.session`）；Cordis 4 的上下文代理对未 `inject` 的命名空间直接抛 `cannot get property "remote.session" without inject`，该异常从渲染路径逃逸成未捕获错误。现改为按可选服务 `ctx.get('remote.session')` 解析，并加 `check:routes` 断言防复发。 |
 | 🎙️ **语音识别改用 DSH 自带的本地识别器** | 不再使用浏览器 Web Speech API（Chrome/Edge 上那其实是**云端识别**，音频会上行给浏览器厂商）。改为把 16 kHz 单声道 PCM16 WAV 交给 dsh 的语音服务，由本地 SenseVoice 在**本机 CPU** 上转写：**离线可用、音频不出机器、无需厂商凭据**。语种随之收窄为 自动 / 中文 / 英语 / 粤语 / 日语 / 韩语。详见 [CHANGELOG](./CHANGELOG.md) `[0.2.0-rc.2]`。 |
 | 💰 **思考强度与输入框模型解耦** | 润色与提示词优化**只跟随输入框当前选择的模型**，思考档位**不再跟着走**：档位始终由本功能自己的设置决定（默认关闭思考）。此前"跟随"把"模型 · 档位"当整体一起抄过来，于是对话里选的高档位会被**按次**计费到每次录音润色和每次 ✨ 上，而跟随时强度下拉框还被隐藏、插件侧无法调回去。详见 [CHANGELOG](./CHANGELOG.md) `[0.2.0-rc.2-sqs.1]`。 |
 | 🎤 **不再出现两个麦克风** | 本插件激活时**接管** `conversation.input.activity`，DSH 自带的麦克风不再渲染（两者功能完全重叠：同一个本地识别器、同一个槽位语义，界面上无从区分）；插件停用后原生按钮自动回来。 |
@@ -35,7 +36,7 @@
 | 🗑️ **移除「文件输入 / 文件转 Markdown / OCR」整块** | DSH `0.1.7` 已原生支持文件拖拽上传、上传进度、文件卡片与重试（`conversation.input.attachments` / `DropOverlay` / `FileCard`），插件再挂一套 📎 文件面板与 `@` 引用芯片属于重复实现，故整体删除。 |
 | 🔧 **修复 Typert 兼容性** | `0.1.7` 收紧了 Typert 边界：`mode: 'strict'` 的 codec 必须带 **`create()` 工厂**；旧版把 schema 直接放在 `schema` 属性上，会被 `requireStrictCodec` 拒绝（报 `strict codec has no create() factory`），导致整个 entry 无法激活、插件根本不加载。现已全部改为工厂形式。 |
 | 🔧 **修复设置存储被移除的 API** | `0.1.7` 删除了 `settings.register(namespace, schema)`（`0.2.0` 仍无此 API），改为按 profile entry 的 `SettingsForms`（带 revision CAS）。本插件的设置改为**自持 JSON 文件**，不再依赖该 API，因而不会被后续版本反复打破。 |
-| 🔧 **对齐依赖版本** | `@deepseek-ai/cordis` → `~4.0.4`、`@deepseek-ai/schemastery` → `~3.18.4`；全部 `@deepseek-ai/dsh-*` 类型包钉到 `0.2.0-rc.2`，peer 范围 `>=0.2.0-rc.2 <0.3.0-0`。 |
+| 🔧 **对齐依赖版本** | `@deepseek-ai/cordis` → `~4.0.5`、`@deepseek-ai/schemastery` → `~3.18.5`；全部 `@deepseek-ai/dsh-*` 类型包钉到 `0.2.1-rc.2`，peer 范围 `>=0.2.1-rc.2 <0.3.0-0`。 |
 | 🏷️ **身份与命名** | 包名 `sqs-dsh-better-input`（npm 同名）、作者 `sanqianshuang`；设置与模板数据目录为 `~/.dsh/sqs-dsh-better-input/`（与原版互不干扰，可并存安装）。 |
 
 > **从 `0.1.0` 升级**：设置项、数据目录与用户可见行为**向下兼容**，不需要迁移任何数据；本版新增的设置键（`streamingPreview` / `segmentSeconds` / `autoStopSeconds`）在读取旧 `settings.json` 时自动补齐，越界值读取即修复。
@@ -97,7 +98,7 @@
 
 ## 🚀 安装
 
-前置：[DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness)（`0.2.0-rc.2`）+ Node.js `^22.19.0 || >=24.0.0`，并在 profile 中启用 DSH 的语音 bundle（插件管理页的「语音输入」，首次使用需准备约 239 MB 模型）。浏览器只需支持 `getUserMedia` 与 Web Audio，不再需要 Chromium 专有的 Web Speech API。
+前置：[DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness)（`0.2.1-rc.2`）+ Node.js `^22.19.0 || >=24.0.0`，并在 profile 中启用 DSH 的语音 bundle（插件管理页的「语音输入」，首次使用需准备约 239 MB 模型）。浏览器只需支持 `getUserMedia` 与 Web Audio，不再需要 Chromium 专有的 Web Speech API。
 
 ### 方式 A：从 npm 安装（推荐）
 
@@ -138,7 +139,7 @@ npm run build
 dsh plugin --profile web add "$PWD"
 ```
 
-> `--legacy-peer-deps`：`0.2.0-rc.2` 的这批类型包（dev 依赖）之间存在 npm 难以自解的 peer 链（如 `dsh-api-remotes` → `dsh-scope`）。它们只用于编译期类型、不会被打进产物（客户端 bundle 已把 `@deepseek-ai/*` 全部外置），因此放宽 peer 校验是安全的。
+> `--legacy-peer-deps`：`0.2.1-rc.2` 的这批类型包（dev 依赖）之间存在 npm 难以自解的 peer 链（如 `dsh-api-remotes` → `dsh-scope`）。它们只用于编译期类型、不会被打进产物（客户端 bundle 已把 `@deepseek-ai/*` 全部外置），因此放宽 peer 校验是安全的。
 
 ### 备选：不装依赖，写进 preset 的 `cordis.yml`
 
@@ -223,7 +224,7 @@ dsh plugin --profile web add "$PWD"
 
 ## 🧩 兼容性
 
-- DeepSeek Harness `0.2.0-rc.2`（peer 范围 `>=0.2.0-rc.2 <0.3.0-0`）
+- DeepSeek Harness `0.2.1-rc.2`（peer 范围 `>=0.2.1-rc.2 <0.3.0-0`）
 - Node.js `^22.19.0 || >=24.0.0`
 - 任意支持 `getUserMedia` + Web Audio 的现代浏览器（Chrome / Edge / Firefox；不再需要 Chromium 专有的 Web Speech API）
 - profile 中启用 DSH 语音 bundle，并完成本地识别模型准备（约 239 MB）
@@ -245,7 +246,7 @@ npm run verify   # 构建 + 三条构建后守卫（bundle / typert / peers）�
 ### 发布
 
 ```sh
-python scripts/publish.py --bump sqs -m "release: 0.2.0-rc.2-sqs.5 —— 修了什么"
+python scripts/publish.py --bump sqs -m "release: 0.2.1-rc.2-sqs.2 —— 修了什么"
 ```
 
 一条命令跑完：`npm run verify`（构建 + 守卫）→ 升版本（`package.json` 与 README 里的版本号

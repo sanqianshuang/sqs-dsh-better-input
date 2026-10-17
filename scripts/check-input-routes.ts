@@ -566,6 +566,27 @@ check(
   'the unresolvable directory is what falls back to the Host catalog default',
   /const entry = this\.entryFor\(sessionId\)[\s\S]{0,200}return this\.catalogDefault/.test(readForBody)
 )
+// The catalog fallback is a generated Remote namespace, which is a Cordis
+// Service keyed `remote.session` (see `remoteServiceKey()` in
+// `@deepseek-ai/dsh-api-gateway`). Reading it as a property — `ctx.remote.session`
+// — throws `cannot get property "remote.session" without inject`, because this
+// plugin deliberately does not inject it. The throw used to escape `readFor()`
+// during render and surface as an uncaught page error on any face without a live
+// directory, notably the session-less settings page. Optional services must go
+// through `ctx.get()`, which answers `undefined` when the namespace is absent.
+check(
+  'the session catalog is resolved as an optional service, never as a remote property',
+  (() => {
+    // Check the executable source only: the header comment legitimately names
+    // the rejected form while explaining why it is rejected.
+    const code = composerModelSource
+      .replace(/\/\*[\s\S]*?\*\//g, '')
+      .replace(/^\s*\/\/.*$/gm, '')
+      .replace(/'remote\.session'/g, '')
+    return /lookup\.get\('remote\.session'\)/.test(composerModelSource) && !/\bremote\??\.session\b/.test(code)
+  })(),
+  (composerModelSource.match(/lookup\.get\('remote\.session'\)/)?.[0] ?? 'ctx.get missing')
+)
 
 // --- 6. the assist route is resolved on the HOST, not the browser ------------
 // The browser's copy of the composer selection is a render-time snapshot whose

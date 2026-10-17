@@ -7,6 +7,61 @@
 > **从未发布到 npm**。首次公开发布统一改名为 `sqs-dsh-better-input`，版本号自 `0.1.0` 起算，
 > 因此不再保留那些未发布的中间版本号。
 
+## [0.2.1-rc.2-sqs.1] - 2026-10-17
+
+**版本号与所适配的 DSH 主线同号**：本版适配 DSH **`0.2.1-rc.2`**，因此前缀从
+`0.2.0-rc.2` 上抬为 `0.2.1-rc.2`，仓库内的 `-sqs.N` 计数重置为 `.1`（换主线版本时
+`scripts/publish.py --dsh-base` 就是这么定义的）。上一版 `0.2.0-rc.2-sqs.4` 适配的是
+DSH `0.2.0-rc.2`。
+
+`0.2.0-rc.2 → 0.2.1-rc.2` 不是一次只有版本号变化的升级：输入框改成了指令芯片
+（`command-chip` / `matchClaim`）、Chat 侧新增 `ChatFlow` / 分组树、Typert 增加了
+资源与主体（principal）访问控制、`dsh-api-remotes` 的转发事件带上了资源读者、
+`dsh-client-ui-slots` 的 `KeyedStandardSource` 多了一个 `member` 参数。本版逐包做了
+字节级比对，把依赖与 peer 范围整体上抬，并在真实浏览器里复核了本插件的每条通路。
+
+### 修复
+
+- **无会话界面（设置页）会抛出未捕获异常：`cannot get property "remote.session" without inject`**。
+  `src/client/composer-model.ts` 在拿不到会话的模型目录时，会回退去读 dsh 的模型目录
+  默认值，那里把 `remote.session` 当成了**属性**访问（`ctx.remote?.session`）。生成的
+  Remote 命名空间在 Cordis 里是一个键为 `remote.<namespace>` 的 **Service**（见
+  `@deepseek-ai/dsh-api-gateway` 的 `remoteServiceKey()`），而本插件刻意不 `inject` 它
+  （模型目录只是锦上添花，不该因此闸住整个浏览器半边）。Cordis 4 的上下文代理对未
+  `inject` 的命名空间会直接抛错，且该错误发生在 `readFor()` 的渲染路径里，于是逃逸成
+  页面级未捕获错误——设置页的「跟随输入框所选模型」一行正是这条通路。现在改为按可选
+  服务解析：`ctx.get('remote.session')`，命名空间不存在时得到 `undefined`，与本插件
+  「读不到就用设置里的路由」的既有降级语义一致。`check:routes` 增加一条断言，禁止再
+  以属性形式读取该命名空间。
+
+### 变更
+
+- **依赖与 peer 范围整体上抬到 `0.2.1-rc.2`**：全部 `@deepseek-ai/dsh-*` 类型包 dev pin
+  改为 `0.2.1-rc.2`，peer 范围改为 `>=0.2.1-rc.2 <0.3.0-0`；`@deepseek-ai/cordis`
+  `~4.0.4 → ~4.0.5`、`@deepseek-ai/schemastery` `~3.18.4 → ~3.18.5`（0.2.1 侧所有包的
+  共同 peer）。`npm run check:peers` 按 dsh 自己的 `includePrerelease` 判定复核通过。
+- **`src/remote.ts` / `src/typert.ts` / `src/settings/store.ts` 的版本注记同步到 0.2.1**：
+  客户端 `$mount` 仍不调用 codec 工厂（0.2.1 的 `client.browser.js` 只有
+  `requireStrictCodec` 的 `mode === 'strict'` 检查与可选的 `decode()`），Typert loader
+  的 `model` 校验、`settings.section` 槽位语义也没有变化。
+- **`docs/internals.md` 的换版流程补记本次比对结论**：0.2.1 的组件差异是实质性的，
+  但本插件只踩到上面那一个点；其余差异（`InputState.draft`、`ChatSnapshot.legacy.nodes`、
+  `conversation.input.right/dock`、`dsh-experimental-speech-to-text` 的
+  `resolve()/transcribe()`）保持兼容。
+
+### 验证
+
+- `npm run verify` 全绿（build + `check:bundle` + `check:speech` + `check:typert` +
+  `check:routes` + `check:peers`）。
+- 一次性 profile（`DSH_HOME` 指向临时目录，bundles = `dsh-base` +
+  `dsh-experimental-voice-input-bundle` + 本插件）在 dsh `0.2.1-rc.2` 上：
+  `--dump-config` 组合出本插件、STDERR 为空；`timeout 30 dsh --profile probe --help`
+  保持运行（124）且 STDERR 为空，说明 Host 半边与 Typert manifest 正常激活。
+- 真实浏览器（Playwright + Chromium，profile 另加 `dsh-web-app`）复核：输入框同时显示
+  ✨ 与麦克风（原生麦克风被座位接管，只有一个）、设置页出现「BetterInput 设置」与
+  「提示词模板」两个分区且版本行显示 `0.2.1-rc.2-sqs.1`、新建模板后键入 `/` 能选中并
+  把正文插入输入框；控制台无错误、无未捕获异常。
+
 ## [0.2.0-rc.2-sqs.4] - 2026-10-04
 
 对 `sqs.3` 的一次**复核修复**。`sqs.3` 引入的「Host 侧解析跟随」有两个致命缺陷，都能装、

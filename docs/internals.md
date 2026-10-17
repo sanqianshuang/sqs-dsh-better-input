@@ -412,6 +412,20 @@ diff -rq "$A/<pkg>/lib" "$B/<pkg>/lib"
 
 Then run `npm run verify` and boot the plugin once in a throwaway profile.
 
+The 0.2.0 → 0.2.1 move was **not** one of those identical releases: the composer gained
+command chips (`InputEvent`/`CommandClaim`, `matchClaim`), chat gained `ChatFlow` and the
+group tree, Typert gained resource/principal access control, and the forwarded-event table
+gained resource readers. Compilation still passed unchanged — the surfaces this plugin
+touches (the `conversation.input.*` slots, `InputState.draft`, `ChatSnapshot.legacy.nodes`,
+`dsh-experimental-speech-to-text`) kept their shapes — but one source fix was needed, and it
+is the kind `tsc` cannot see: **a generated Remote namespace is a Cordis Service keyed
+`remote.<namespace>`**, not a plain property. `ctx.remote.session` throws
+`cannot get property "remote.session" without inject` on a context that does not inject it,
+which is why the catalog fallback in `composer-model.ts` now goes through
+`ctx.get('remote.session')`. The lesson for the next retarget: run the browser probe on the
+**settings page too**, not just the composer — that fallback only executes on a session-less
+face, and the throw escapes from a render path as an uncaught page error.
+
 ### Probing a profile without touching the live service
 
 `$DSH_HOME` is honoured, so a scratch profile proves composition and activation without

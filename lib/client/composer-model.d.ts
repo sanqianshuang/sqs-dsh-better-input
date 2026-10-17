@@ -153,6 +153,27 @@ export declare class ComposerModelSource {
      */
     private entryFor;
     /**
+     * Resolve dsh's generated `remote.session` namespace lazily, as an optional
+     * service.
+     *
+     * A Remote namespace is a Cordis Service keyed `remote.<namespace>` (see
+     * `remoteServiceKey()` in `@deepseek-ai/dsh-api-gateway` → `client.browser.js`),
+     * so it must be read through `ctx.get()` like every other optional service.
+     * Reading it as a property (`ctx.remote.session`) throws
+     * `cannot get property "remote.session" without inject` on Cordis 4.x — the
+     * context proxy refuses a namespace that is not in `inject`, and this plugin
+     * deliberately does not inject it (the catalog is a convenience fallback, not a
+     * reason to gate the whole browser half). That throw used to escape from
+     * `readFor()` during render and surface as an uncaught page error on any face
+     * with no live directory (notably the session-less settings page).
+     *
+     * `ctx.get()` answers `undefined` for a service that is not present, which is
+     * exactly the "no model catalog" degradation this fallback already handles.
+     * The shape stays structural (see the header) — importing the generated
+     * namespace type would tie the browser half to the session-controller package.
+     */
+    private sessionCatalogRemote;
+    /**
      * Fetch the Host model catalog once, for the last-resort default route.
      *
      * Failure is not an error worth surfacing: the assists keep working from the
